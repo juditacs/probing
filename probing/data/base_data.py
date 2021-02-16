@@ -73,49 +73,9 @@ class Vocab:
             inv_const = {i: v for v, i in self.constants.items()}
             for symbol, id_ in sorted(self.vocab.items(), key=lambda x: x[1]):
                 if symbol in inv_const:
-                    f.write('{}\t{}\t{}\n'.format(
-                        symbol, id_, inv_const[symbol]))
+                    f.write(f"{symbol}\t{id_}\t{inv_const[symbol]}\n")
                 else:
-                    f.write('{}\t{}\n'.format(symbol, id_))
-
-    def load_word2vec_format(self, fn):
-        with open(fn) as f:
-            first = next(f).rstrip('\n').split(" ")
-            if len(first) != 2:
-                word = first[0]
-                self.vocab[word] = len(self.vocab)
-            for line in f:
-                fd = line.rstrip('\n').split(" ")
-                word = fd[0]
-                self.vocab[word] = len(self.vocab)
-        self.frozen = True
-
-    def post_load_embedding(self, fn):
-        # constants such as UNK are not accounted for
-        assert not self.constants
-        if fn.endswith('.gz'):
-            stream = gzip.open(fn, 'rt')
-        else:
-            stream = open(fn, 'rt')
-        embedding = []
-        emb_vocab = {}
-        first = next(stream)
-        fd = first.split(" ")
-        if len(fd) > 2:
-            word = fd[0]
-            if word in self.vocab:
-                embedding.append(list(map(float(fd[1:]))))
-                emb_vocab[word] = len(emb_vocab)
-        for line in stream:
-            word = fd[0]
-            if word in self.vocab:
-                embedding.append(list(map(float(fd[1:]))))
-                emb_vocab[word] = len(emb_vocab)
-        stream.close()
-        self.vocab = emb_vocab
-        self.embedding = embedding
-        self.frozen = True
-        return embedding
+                    f.write(f"{symbol}\t{id_}\n")
 
 
 class DataFields:
@@ -132,8 +92,8 @@ class DataFields:
 
     def __setattr__(self, attr, value):
         if attr not in self._fields:
-            raise AttributeError("{} has no attribute {}".format(
-                self.__class__.__name__, attr))
+            raise AttributeError(
+                f"{self.__class__.__name__} has no attribute {attr}")
         return super().__setattr__(attr, value)
 
     def __getitem__(self, idx):
@@ -155,8 +115,8 @@ class DataFields:
     def __getattr__(self, attr):
         if attr in self._alias:
             return getattr(self, self._alias[attr])
-        raise AttributeError("{} does not have a {} field".format(
-            self.__class__.__name__, attr))
+        raise AttributeError(
+            f"{self.__class__.__name__} has no attribute {attr}")
 
     def __len__(self):
         return len(self._fields)
@@ -169,13 +129,11 @@ class DataFields:
             if val is None:
                 none_fields.append(field)
             else:
-                out.append("{}={}".format(field, repr(val)))
+                out.append(f"{field}={val!r}")
         if none_fields:
-            return "{}({}, None fields: {})".format(
-                self.__class__.__name__, ", ".join(out),
-                ", ".join(none_fields))
-        return "{}({})".format(self.__class__.__name__, ", ".join(out))
-
+            return f"{self.__class__.__name__}({', '.join(out)}, " \
+                    "None fields: {', '.join(none_fields)}"
+        return f"{self.__class__.__name__}({', '.join(out)})"
 
     @classmethod
     def initialize_all(cls, initializer):
@@ -186,6 +144,24 @@ class DataFields:
 
     def _asdict(self):
         return OrderedDict((k, getattr(self, k, None)) for k in self._fields)
+
+    def keys(self):
+        for field in self._fields:
+            value = getattr(self, field, None)
+            if value:
+                yield field
+
+    def values(self):
+        for field in self._fields:
+            value = getattr(self, field, None)
+            if value:
+                yield value
+
+    def items(self):
+        for field in self._fields:
+            value = getattr(self, field, None)
+            if value:
+                yield field, value
 
 
 class BaseDataset:
@@ -214,8 +190,7 @@ class BaseDataset:
             need_constants = list(self.data_recordclass()._asdict().keys())
         self.vocabs = self.data_recordclass()
         for field in need_vocab:
-            vocab_fn = getattr(self.config, 'vocab_{}'.format(field),
-                               vocab_pre+field)
+            vocab_fn = getattr(self.config, f'vocab_{field}', vocab_pre+field)
             if os.path.exists(vocab_fn):
                 setattr(self.vocabs, field, Vocab(file=vocab_fn, frozen=True))
             else:
@@ -242,8 +217,8 @@ class BaseDataset:
             if not self.ignore_sample(sample):
                 self.raw.append(sample)
             if self.max_samples is not None and len(self.raw) >= self.max_samples:
-                logging.info("Read max_samples ({}) before finishing the file.".format(
-                    self.max_samples))
+                logging.info("Reached max samples ({self.max_samples}) before "
+                             "finishing the file.")
                 break
 
     def extract_sample_from_line(self, line):
@@ -296,7 +271,7 @@ class BaseDataset:
 
     @property
     def is_unlabeled(self):
-        return self.raw[0].tgt is None or "Unlabeled" in self.__class__.__name__
+        return self.raw[0].tgt is None
 
     def create_recordclass(self, *data):
         return self.__class__.data_recordclass(*data)
@@ -324,20 +299,17 @@ class BaseDataset:
             self.print_sample(sample, stream)
 
     def print_sample(self, sample, stream):
-        stream.write("{}\n".format("\t".join(" ".join(s) for s in sample)))
+        sample_str = "\t".join(" ".join(s) for s in sample)
+        stream.write(f"{sample_str}\n")
 
     def save_vocabs(self):
-        # FIXME recordclass removal
-        if hasattr(self.vocabs, '_fields'):
-            vocab_list = list(self.vocabs._fields)
-        else:
-            vocab_list = list(self.vocabs._asdict().keys())
+        vocab_list = list(self.vocabs._asdict().keys())
         for vocab_name in vocab_list:
             vocab = getattr(self.vocabs, vocab_name)
             if vocab is None:
                 continue
             path = os.path.join(
-                self.config.experiment_dir, 'vocab_{}'.format(vocab_name))
+                self.config.experiment_dir, f'vocab_{vocab_name}')
             vocab.save(path)
 
     def batched_iter(self, batch_size):
@@ -349,7 +321,7 @@ class BaseDataset:
             end = start + batch_size
             batch = []
             for i, mtx in enumerate(self.mtx):
-                if mtx is None or len(mtx) == 0:
+                if mtx is None or len(mtx) == 0 or mtx[0] is None:
                     batch.append(None)
                 elif isinstance(mtx[0], (int, np.integer)):
                     batch.append(mtx[start:end])

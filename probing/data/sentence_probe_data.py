@@ -109,7 +109,6 @@ class Embedding:
 
 
 class EmbeddingProberDataset(BaseDataset):
-    unlabeled_data_class = 'UnlabeledEmbeddingProberDataset'
     constants = []
     data_recordclass = EmbeddingOnlyFields
 
@@ -145,7 +144,10 @@ class EmbeddingProberDataset(BaseDataset):
         labels = []
         for r in self.raw:
             word_vecs.append(self.embedding[r.target_word])
-            labels.append(self.vocabs.label[r.label])
+            if r.label:
+                labels.append(self.vocabs.label[r.label])
+            else:
+                labels.append(None)
         self.mtx = EmbeddingOnlyFields(
             target_word=word_vecs,
             label=labels
@@ -188,15 +190,9 @@ class EmbeddingProberDataset(BaseDataset):
             )
 
 
-class UnlabeledEmbeddingProberDataset(EmbeddingProberDataset):
-    pass
-
-
-
 class WordOnlySentenceProberDataset(BaseDataset):
 
     data_recordclass = WordOnlyFields
-    unlabeled_data_class = 'UnlabeledWordOnlySentenceProberDataset'
     constants = []
 
     def load_or_create_vocabs(self):
@@ -218,7 +214,7 @@ class WordOnlySentenceProberDataset(BaseDataset):
 
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
-        if len(line) > 3:
+        if len(fd) > 3:
             sent, target, idx, label = fd[:4]
         else:
             sent, target, idx = fd[:3]
@@ -236,25 +232,16 @@ class WordOnlySentenceProberDataset(BaseDataset):
         words = []
         lens = []
         labels = []
-        if self.config.use_global_padding:
-            maxlen = self.get_max_seqlen()
-            longer = sum(s.target_word_len > maxlen for s in self.raw)
-            if longer > 0:
-                logging.warning('{} elements longer than maxlen'.format(longer))
         for sample in self.raw:
             idx = list(self.vocabs.target_word[c] for c in sample.target_word)
-            if self.config.use_global_padding:
-                idx = idx[:maxlen-2]
-                idx = [self.vocabs.target_word.SOS] + \
-                    idx + [self.vocabs.target_word.EOS]
-                idx = idx + [self.vocabs.target_word.PAD] * (maxlen - len(idx))
-                lens.append(maxlen)
-            else:
-                idx = [self.vocabs.target_word.SOS] + \
-                    idx + [self.vocabs.target_word.EOS]
-                lens.append(len(idx))
+            idx = [self.vocabs.target_word.SOS] + \
+                idx + [self.vocabs.target_word.EOS]
+            lens.append(len(idx))
             words.append(idx)
-            labels.append(self.vocabs.label[sample.label])
+            if sample.label:
+                labels.append(self.vocabs.label[sample.label])
+            else:
+                labels.append(None)
         self.mtx = WordOnlyFields(
             target_word=words, target_word_len=lens, label=labels
         )
@@ -279,19 +266,18 @@ class WordOnlySentenceProberDataset(BaseDataset):
         return max(s.target_word_len for s in self.raw) + 2
 
 
-class UnlabeledWordOnlySentenceProberDataset(WordOnlySentenceProberDataset):
-    def is_unlabeled(self):
-        return True
-
-
 # TODO replace MidSentenceProberDataset with TokenInSequenceProberFields
 class MidSentenceProberDataset(BaseDataset):
-    unlabeled_data_class = 'UnlabeledMidSentenceProberDataset'
     data_recordclass = MidSequenceProberFields
     constants = ['SOS', 'EOS', 'UNK', 'PAD']
 
     def extract_sample_from_line(self, line):
-        raw_sent, raw_target, raw_idx, label = line.rstrip("\n").split("\t")
+        fd = line.rstrip("\n").split("\t")
+        raw_sent, raw_target, raw_idx = fd[:3]
+        if len(fd) > 3:
+            label = fd[3]
+        else:
+            label = None
         raw_idx = int(raw_idx)
         input = list(raw_sent)
         words = raw_sent.split(' ')
@@ -315,7 +301,10 @@ class MidSentenceProberDataset(BaseDataset):
         SOS = self.vocabs.input['SOS']
         EOS = self.vocabs.input['EOS']
         for sample in self.raw:
-            mtx.label.append(self.vocabs.label[sample.label])
+            if sample.label:
+                mtx.label.append(self.vocabs.label[sample.label])
+            else:
+                mtx.label.append(None)
             mtx.input_len.append(sample.input_len)
             mtx.target_idx.append(sample.target_idx)
             mtx.input.append(
@@ -334,15 +323,8 @@ class MidSentenceProberDataset(BaseDataset):
         ))
 
 
-class UnlabeledMidSentenceProberDataset(MidSentenceProberDataset):
-
-    @property
-    def is_unlabeled(self):
-        return True
-
 
 class SequenceClassificationWithSubwords(BaseDataset):
-    unlabeled_data_class = 'UnlabeledSequenceClassificationWithSubwords'
     data_recordclass = SequenceClassificationWithSubwordsDataFields
     constants = ['UNK']
 
@@ -486,14 +468,7 @@ class SequenceClassificationWithSubwords(BaseDataset):
                 stream.write("\n")
 
 
-class UnlabeledSequenceClassificationWithSubwords(SequenceClassificationWithSubwords):
-    @property
-    def is_unlabeled(self):
-        return True
-
-
 class SentenceProberDataset(BaseDataset):
-    unlabeled_data_class = 'UnlabeledSentenceProberDataset'
     data_recordclass = TokenInSequenceProberFields
     constants = []
 
@@ -527,7 +502,12 @@ class SentenceProberDataset(BaseDataset):
             yield batch
 
     def extract_sample_from_line(self, line):
-        raw_sent, raw_target, raw_idx, label = line.rstrip("\n").split("\t")
+        fd = line.rstrip("\n").split("\t")
+        raw_sent, raw_target, raw_idx = fd[:3]
+        if len(fd) > 3:
+            label = fd[3]
+        else:
+            label = None
         raw_idx = int(raw_idx)
         # Build a list-of-lists from the tokenized words.
         # This allows shuffling it later.
@@ -615,9 +595,3 @@ class SentenceProberDataset(BaseDataset):
         stream.write("{}\t{}\t{}\t{}\n".format(
             sample.raw_sentence, sample.raw_target, sample.raw_idx, sample.label
         ))
-
-
-class UnlabeledSentenceProberDataset(SentenceProberDataset):
-    @property
-    def is_unlabeled(self):
-        return True

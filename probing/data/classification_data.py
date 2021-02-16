@@ -22,12 +22,16 @@ class ClassificationFields(DataFields):
 
 class ClassificationDataset(BaseDataset):
 
-    unlabeled_data_class = 'UnlabeledClassificationDataset'
     data_recordclass = ClassificationFields
     constants = ['UNK', 'SOS', 'EOS', 'PAD']
 
     def extract_sample_from_line(self, line):
-        src, tgt = line.split("\t")[:2]
+        fd = line.split("\t")
+        if len(fd) >= 2:
+            src, tgt = fd[:2]
+        else:
+            src = fd[0]
+            tgt = None
         src = src.split(" ")
         return ClassificationFields(src, len(src)+2, tgt)
 
@@ -57,31 +61,3 @@ class ClassificationDataset(BaseDataset):
 
     def print_sample(self, sample, stream):
         stream.write("{}\t{}\n".format(" ".join(sample.src), sample.tgt))
-
-
-class UnlabeledClassificationDataset(ClassificationDataset):
-
-    def extract_sample_from_line(self, line):
-        src = line.split("\t")[0]
-        src = src.split(" ")
-        return ClassificationFields(src, len(src), None)
-
-
-class NoSpaceClassificationDataset(ClassificationDataset):
-
-    unlabeled_data_class = 'UnlabeledNoSpaceClassificationDataset'
-
-    def extract_sample_from_line(self, line):
-        src, tgt = line.split("\t")[:2]
-        src = list(src)
-        return ClassificationFields(src, len(src)+2, tgt)
-
-
-class UnlabeledNoSpaceClassificationDataset(UnlabeledClassificationDataset):
-
-    def extract_sample_from_line(self, line):
-        src = line.split("\t")[0]
-        return ClassificationFields(list(src), len(src)+2, None)
-
-    def print_sample(self, sample, stream):
-        stream.write("{}\t{}\n".format("".join(sample.src), sample.tgt))

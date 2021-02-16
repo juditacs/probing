@@ -85,16 +85,10 @@ class BaseModel(nn.Module):
         window = self.config.early_stopping_window
         if len(result.dev_loss) < 2 * window:
             return False
-        if self.config.early_stopping_strict:
-            ea_loss = sum(result.dev_loss[-2*window:-window]) <= \
-                    sum(result.dev_loss[-window:])
-            ea_acc = sum(result.dev_acc[-2*window:-window]) >= \
-                    sum(result.dev_acc[-window:])
-        else:
-            ea_loss = sum(result.dev_loss[-2*window:-window]) < \
-                    sum(result.dev_loss[-window:])
-            ea_acc = sum(result.dev_acc[-2*window:-window]) > \
-                    sum(result.dev_acc[-window:])
+        ea_loss = sum(result.dev_loss[-2*window:-window]) <= \
+                sum(result.dev_loss[-window:])
+        ea_acc = sum(result.dev_acc[-2*window:-window]) >= \
+                sum(result.dev_acc[-window:])
         if self.config.early_stopping_monitor == 'dev_acc':
             return ea_acc
         if self.config.early_stopping_monitor == 'dev_loss':

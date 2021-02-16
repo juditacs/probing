@@ -8,7 +8,6 @@
 import os
 import shutil
 import logging
-from datetime import datetime
 import platform
 
 import numpy as np
@@ -39,24 +38,18 @@ class Experiment:
         self.set_random_seeds()
         self.config.commit_hash = git_hash
         self.data_class = getattr(data_module, self.config.dataset_class)
-        self.unlabeled_data_class = getattr(
-            data_module, self.data_class.unlabeled_data_class)
         self.__load_data(train_data, dev_data)
         logging.info("Data loaded")
-        for i, field in enumerate(self.train_data.mtx._asdict().keys()):
-            if self.train_data.mtx[i] is not None:
-                logging.info("Train [{}] size: {}".format(
-                    field, len(self.train_data.mtx[i])))
-        for i, field in enumerate(self.dev_data.mtx._asdict().keys()):
-            if self.dev_data.mtx[i] is not None:
-                logging.info("Dev [{}] size: {}".format(
-                    field, len(self.dev_data.mtx[i])))
+        logging.info(f"Train data size: {len(self.train_data)}")
+        logging.info(f"Dev data size: {len(self.dev_data)}")
+        data_fields = list(self.train_data.raw[0].keys())
+        logging.info(f"Data fields: {', '.join(data_fields)}")
         self.init_model()
         try:
             self.model.check_params()
-        except:
+        except Exception as e:
             self.remove_experiment_dir()
-            raise
+            raise e
 
     def remove_experiment_dir(self):
         if os.path.exists(self.config.experiment_dir):
@@ -91,12 +84,14 @@ class Experiment:
             self.dev_data = dev_data
 
     def __load_train_dev_data(self, train_fn, dev_fn):
+        # FIXME max_samples=None should be the default
         if hasattr(self.config, 'train_size'):
             self.train_data = self.data_class(self.config, train_fn,
                                               max_samples=self.config.train_size)
         else:
             self.train_data = self.data_class(self.config, train_fn)
         self.train_data.save_vocabs()
+        # FIXME share_vocabs should be handled in a nicer way
         if hasattr(self.config, 'dev_size'):
             self.dev_data = self.data_class(
                 self.config, dev_fn, max_samples=self.config.dev_size,
@@ -121,7 +116,6 @@ class Experiment:
         logging.info("Starting experiment: {}".format(
             self.config.experiment_dir))
         self.result = Result()
-        self.result.start()
         self.result.node = platform.node()
         self.result.parameters = sum(
             p.nelement() for p in self.model.parameters() if p.requires_grad)
@@ -133,13 +127,13 @@ class Experiment:
         self.result.train_size = len(self.train_data)
         self.result.dev_size = len(self.dev_data)
         self.config.save()
+        self.result.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.result.end()
-        logging.info("Experiment dir: {}".format(
-            self.config.experiment_dir))
-        if len(self.result.dev_acc) > 0:
+        logging.info("Experiment dir: {}".format(self.config.experiment_dir))
+        if len(self.result.dev_loss) > 0:
             min_ = int(self.result.running_time // 60)
             sec = int(self.result.running_time - min_ * 60)
             logging.info("Experiment finished in {}m{}s, "

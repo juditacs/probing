@@ -1,9 +1,8 @@
 #! /usr/bin/env python
 
-from probing.data.classification_data import ClassificationDataset, UnlabeledClassificationDataset
-from probing.data.classification_data import NoSpaceClassificationDataset, UnlabeledNoSpaceClassificationDataset
-from probing.data.sentence_probe_data import WordOnlySentenceProberDataset, UnlabeledWordOnlySentenceProberDataset
-from probing.data.sentence_probe_data import MidSentenceProberDataset, UnlabeledMidSentenceProberDataset
-from probing.data.sentence_probe_data import EmbeddingProberDataset, UnlabeledEmbeddingProberDataset
-from probing.data.sentence_probe_data import SentenceProberDataset, UnlabeledSentenceProberDataset
-from probing.data.sentence_probe_data import SequenceClassificationWithSubwords, UnlabeledSequenceClassificationWithSubwords
+from probing.data.classification_data import ClassificationDataset
+from probing.data.sentence_probe_data import WordOnlySentenceProberDataset
+from probing.data.sentence_probe_data import MidSentenceProberDataset
+from probing.data.sentence_probe_data import EmbeddingProberDataset
+from probing.data.sentence_probe_data import SentenceProberDataset
+from probing.data.sentence_probe_data import SequenceClassificationWithSubwords
