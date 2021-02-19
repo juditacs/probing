@@ -311,7 +311,6 @@ class SentenceRepresentationProber(BaseModel):
             else:
                 raise ValueError(f"Subword pooling {subword_pooling} "
                                  "with caching is not supported.")
-            # Shift target
             if self.config.shift_target:
                 shift_max = np.array(batch.num_tokens) - 1
                 idx += self.config.shift_target

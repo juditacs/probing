@@ -11,38 +11,58 @@ import gzip
 import logging
 from sys import stdout
 import numpy as np
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
+from probing.utils import find_ndim
 
 
 class Vocab:
-    def __init__(self, file=None, frozen=False, constants=None):
+    # FIXME remove constants parameter
+    def __init__(self, from_file=None, frozen=False, use_constants=False,
+                 pad_token='[PAD]', unk_token='[UNK]', bos_token='[BOS]',
+                 eos_token='[EOS]', constants=None,
+                ):
+        # FIXME add unk_symbol, bos_symbol etc.
         self.vocab = {}
-        self.constants = {}
-        if file is not None:
-            with open(file) as f:
+        self.pad_token = None
+        self.unk_token = None
+        self.bos_token = None
+        self.eos_token = None
+        if from_file:
+            with open(from_file) as f:
                 for line in f:
-                    fd = line.rstrip("\n").split("\t")
-                    if len(fd) == 3:
-                        symbol, id_, const = fd
-                        self.constants[const] = int(symbol)
-                        self.vocab[self.constants[const]] = int(id_)
-                        setattr(self, const, int(id_))
-                    else:
-                        symbol, id_ = fd
-                        self.vocab[symbol] = int(id_)
+                    fields = line.rstrip("\n").split("\t")
+                    # If it's a constant
+                    if len(fields) == 3:
+                        symbol, id_, const = fields
+                        id_ = int(id_)
+                        # FIXME exception handling instead of assert
+                        assert const in ('pad_token', 'unk_token', 'bos_token', 'eos_token')
+                        setattr(self, const, symbol)
+                        self.vocab[symbol] = id_
+                    elif len(fields) == 2:
+                        symbol, id_ = fields
+                        id_ = int(id_)
+                        self.vocab[symbol] = id_
+            self.frozen = True
         else:
-            if constants is not None:
-                for const in constants:
-                    setattr(self, const, len(self.constants))
-                    self.constants[const] = len(self.constants)
-                    self.vocab[self.constants[const]] = len(self.vocab)
-        self.frozen = frozen
+            self.vocab = {}
+            if use_constants:
+                self.pad_token = pad_token
+                self.unk_token = unk_token
+                self.bos_token = bos_token
+                self.eos_token = eos_token
+                self.vocab[self.pad_token] = 0
+                self.vocab[self.unk_token] = 1
+                self.vocab[self.bos_token] = 2
+                self.vocab[self.eos_token] = 3
+            self.frozen = False
         self.__inv_vocab = None
 
     def __getitem__(self, key):
         if self.frozen:
-            if 'UNK' in self.constants:
-                return self.vocab.get(key, self.UNK)
+            if self.unk_token:
+                return self.vocab.get(key, self.vocab[self.unk_token])
             return self.vocab[key]
         return self.vocab.setdefault(key, len(self.vocab))
 
@@ -64,23 +84,60 @@ class Vocab:
     def inv_lookup(self, key):
         if self.__inv_vocab is None:
             self.__inv_vocab = {i: s for s, i in self.vocab.items()}
-            for const, idx in self.constants.items():
-                self.__inv_vocab[idx] = const
-        return self.__inv_vocab.get(key, 'UNK')
+        return self.__inv_vocab.get(key, self.unk_token)
 
     def save(self, fn):
         with open(fn, 'w') as f:
-            inv_const = {i: v for v, i in self.constants.items()}
-            for symbol, id_ in sorted(self.vocab.items(), key=lambda x: x[1]):
-                if symbol in inv_const:
-                    f.write(f"{symbol}\t{id_}\t{inv_const[symbol]}\n")
-                else:
-                    f.write(f"{symbol}\t{id_}\n")
+            if self.pad_token:
+                f.write(f"{self.pad_token}\t0\tpad_token\n")
+                f.write(f"{self.unk_token}\t1\tunk_token\n")
+                f.write(f"{self.bos_token}\t2\tbos_token\n")
+                f.write(f"{self.eos_token}\t3\teos_token\n")
+            for symbol, id_ in self.vocab.items():
+                if self.pad_token and id_ < 4:
+                    continue
+                f.write(f"{symbol}\t{id_}\n")
+
+    def encode(self, data):
+        ndim = find_ndim(data)
+        if ndim == 0:
+            return self[data]
+        if ndim == 1:
+            if self.bos_token is not None:
+                data = [self.bos_token] + data + [self.eos_token]
+            return [self[d] for d in data]
+        # if ndim == 2:
+        #     indexed = []
+        #     bos = self[self.bos_token]
+        #     eos = self[self.eos_token]
+        #     for row in data:
+        #         indexed.append(
+        #             [bos] + [self[s] for s in row] + [eos]
+        #         )
+        #     return indexed
+        raise ValueError(f"Data dimension ({ndim}) too high. Input: {data}")
+
+    def pad(self, data):
+        ndim = find_ndim(data)
+        # If it's 2D and it needs padding.
+        if ndim == 2 and self.pad_token:
+            maxlen = max(len(d) for d in data)
+            padded = []
+            pad = self[self.pad_token]
+            for row in data:
+                padded.append(
+                    list(row) + [pad] * (maxlen - len(row))
+                )
+            return padded
+        else:
+            return data
 
 
 class DataFields:
     _fields = ('src', 'tgt')
     _alias = {}
+    needs_vocab = ()
+    needs_constants = ()
 
     def __init__(self, *args, **kwargs):
         for field in self._fields:
@@ -96,21 +153,21 @@ class DataFields:
                 f"{self.__class__.__name__} has no attribute {attr}")
         return super().__setattr__(attr, value)
 
-    def __getitem__(self, idx):
-        return getattr(self, self._fields[idx])
+    def __getitem__(self, field):
+        return getattr(self, field)
 
-    def __setitem__(self, idx, value):
-        return setattr(self, self._fields[idx], value)
+    # def __setitem__(self, idx, value):
+        # return setattr(self, self._fields[idx], value)
 
     def __iter__(self):
         for field in self._fields:
             yield getattr(self, field)
 
-    def get_existing_fields_and_values(self):
-        for field in self._fields:
-            val = getattr(self, field)
-            if val is not None:
-                yield field, val
+    # def get_existing_fields_and_values(self):
+    #     for field in self._fields:
+    #         val = getattr(self, field)
+    #         if val is not None:
+    #             yield field, val
 
     def __getattr__(self, attr):
         if attr in self._alias:
@@ -160,7 +217,7 @@ class DataFields:
     def items(self):
         for field in self._fields:
             value = getattr(self, field, None)
-            if value:
+            if value is not None:
                 yield field, value
 
 
@@ -182,22 +239,16 @@ class BaseDataset:
 
     def load_or_create_vocabs(self):
         vocab_pre = os.path.join(self.config.experiment_dir, 'vocab_')
-        need_vocab = getattr(self.data_recordclass, '_needs_vocab', None)
-        if need_vocab is None:
-            need_vocab = list(self.data_recordclass()._asdict().keys())
-        need_constants = getattr(self.data_recordclass, '_needs_constants', None)
-        if need_constants is None:
-            need_constants = list(self.data_recordclass()._asdict().keys())
-        self.vocabs = self.data_recordclass()
-        for field in need_vocab:
-            vocab_fn = getattr(self.config, f'vocab_{field}', vocab_pre+field)
+        vocabs = {}
+        for field in self.datafield_class.needs_vocab:
+            vocab_fn = f"{vocab_pre}{field}"
             if os.path.exists(vocab_fn):
-                setattr(self.vocabs, field, Vocab(file=vocab_fn, frozen=True))
+                vocabs[field] = Vocab(from_file=vocab_fn)
+            elif field in self.datafield_class.needs_constants:
+                vocabs[field] = Vocab(use_constants=True)
             else:
-                if field in need_constants:
-                    setattr(self.vocabs, field, Vocab(constants=self.constants))
-                else:
-                    setattr(self.vocabs, field, Vocab(constants=[]))
+                vocabs[field] = Vocab(use_constants=False)
+        self.vocabs = self.datafield_class(**vocabs)
 
     def load_stream_or_file(self, stream_or_file):
         if isinstance(stream_or_file, str):
@@ -229,25 +280,14 @@ class BaseDataset:
         return False
 
     def to_idx(self):
-        mtx = [[] for _ in range(len(self.raw[0]))]
+        mtx = defaultdict(list)
         for sample in self.raw:
-            for i, part in enumerate(sample):
-                if part is None:  # unlabeled data
-                    mtx[i] = None
-                elif isinstance(part, int):
-                    mtx[i].append(part)
-                elif isinstance(part, str):
-                    mtx[i].append(self.vocabs[i][part])
+            for field, value in sample.items():
+                if field in self.datafield_class.needs_vocab:
+                    mtx[field].append(self.vocabs[field].encode(value))
                 else:
-                    vocab = self.vocabs[i]
-                    idx = []
-                    if 'SOS' in vocab.constants:
-                        idx.append(vocab.SOS)
-                    idx.extend([vocab[s] for s in part])
-                    if 'EOS' in vocab.constants:
-                        idx.append(vocab.EOS)
-                    mtx[i].append(idx)
-        self.mtx = self.create_recordclass(*mtx)
+                    mtx[field].append(value)
+        self.mtx = self.datafield_class(**mtx)
 
     def sort_data_by_length(self, sort_field=None):
         if self.is_unlabeled:
@@ -267,14 +307,11 @@ class BaseDataset:
                 ordered.append(m)
             else:
                 ordered.append([m[idx] for idx in order])
-        self.mtx = self.create_recordclass(*ordered)
+        self.mtx = self.datafield_class(*ordered)
 
     @property
     def is_unlabeled(self):
         return self.raw[0].tgt is None
-
-    def create_recordclass(self, *data):
-        return self.__class__.data_recordclass(*data)
 
     def decode_and_print(self, model_output, stream=stdout):
         self.decode(model_output)
@@ -319,22 +356,13 @@ class BaseDataset:
         for start in starts:
             self._start = start
             end = start + batch_size
-            batch = []
-            for i, mtx in enumerate(self.mtx):
-                if mtx is None or len(mtx) == 0 or mtx[0] is None:
-                    batch.append(None)
-                elif isinstance(mtx[0], (int, np.integer)):
-                    batch.append(mtx[start:end])
+            batch = {}
+            for field, mtx in self.mtx.items():
+                if field in self.datafield_class.needs_vocab:
+                    batch[field] = self.vocabs[field].pad(mtx[start:end])
                 else:
-                    PAD = self.vocabs[i].PAD
-                    this_batch = mtx[start:end]
-                    maxlen = max(len(d) for d in this_batch)
-                    padded = [
-                        sample + [PAD] * (maxlen-len(sample))
-                        for sample in this_batch
-                    ]
-                    batch.append(padded)
-            yield self.create_recordclass(*batch)
+                    batch[field] = mtx[start:end]
+            yield self.datafield_class(**batch)
 
     def __len__(self):
         return len(self.raw)

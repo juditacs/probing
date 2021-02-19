@@ -9,9 +9,20 @@ import subprocess
 import os
 import logging
 
+from collections.abc import Iterable
+
 
 class UncleanWorkingDirectoryException(Exception):
     pass
+
+
+def find_ndim(data):
+    ndim = 0
+    to_iter = data
+    while isinstance(to_iter, Iterable) and not isinstance(to_iter, str):
+        ndim += 1
+        to_iter = to_iter[0]
+    return ndim
 
 
 def run_command(cmd):
