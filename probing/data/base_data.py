@@ -19,6 +19,7 @@ from probing.utils import find_ndim
 class Vocab:
     # FIXME remove constants parameter
     def __init__(self, from_file=None, frozen=False, use_constants=False,
+                 use_padding=False,
                  pad_token='[PAD]', unk_token='[UNK]', bos_token='[BOS]',
                  eos_token='[EOS]', constants=None,
                 ):
@@ -56,6 +57,9 @@ class Vocab:
                 self.vocab[self.unk_token] = 1
                 self.vocab[self.bos_token] = 2
                 self.vocab[self.eos_token] = 3
+            if use_padding:
+                self.pad_token = pad_token
+                self.vocab[self.pad_token] = 0
             self.frozen = False
         self.__inv_vocab = None
 
@@ -244,10 +248,12 @@ class BaseDataset:
             vocab_fn = f"{vocab_pre}{field}"
             if os.path.exists(vocab_fn):
                 vocabs[field] = Vocab(from_file=vocab_fn)
-            elif field in self.datafield_class.needs_constants:
-                vocabs[field] = Vocab(use_constants=True)
             else:
-                vocabs[field] = Vocab(use_constants=False)
+                needs_constants = field in self.datafield_class.needs_constants
+                needs_padding = field in self.datafield_class.needs_padding
+                # FIXME I don't like the mix in naming convention use vs needs
+                vocabs[field] = Vocab(use_constants=needs_constants,
+                                      use_padding=needs_padding)
         self.vocabs = self.datafield_class(**vocabs)
 
     def load_stream_or_file(self, stream_or_file):
@@ -288,6 +294,21 @@ class BaseDataset:
                 else:
                     mtx[field].append(value)
         self.mtx = self.datafield_class(**mtx)
+
+    def batched_iter(self, batch_size):
+        starts = list(range(0, len(self), batch_size))
+        if self.is_unlabeled is False and self.config.shuffle_batches:
+            np.random.shuffle(starts)
+        for start in starts:
+            self._start = start
+            end = start + batch_size
+            batch = {}
+            for field, mtx in self.mtx.items():
+                if field in self.datafield_class.needs_padding:
+                    batch[field] = self.vocabs[field].pad(mtx[start:end])
+                else:
+                    batch[field] = mtx[start:end]
+            yield self.datafield_class(**batch)
 
     def sort_data_by_length(self, sort_field=None):
         if self.is_unlabeled:
@@ -348,21 +369,6 @@ class BaseDataset:
             path = os.path.join(
                 self.config.experiment_dir, f'vocab_{vocab_name}')
             vocab.save(path)
-
-    def batched_iter(self, batch_size):
-        starts = list(range(0, len(self), batch_size))
-        if self.is_unlabeled is False and self.config.shuffle_batches:
-            np.random.shuffle(starts)
-        for start in starts:
-            self._start = start
-            end = start + batch_size
-            batch = {}
-            for field, mtx in self.mtx.items():
-                if field in self.datafield_class.needs_padding:
-                    batch[field] = self.vocabs[field].pad(mtx[start:end])
-                else:
-                    batch[field] = mtx[start:end]
-            yield self.datafield_class(**batch)
 
     def __len__(self):
         return len(self.raw)

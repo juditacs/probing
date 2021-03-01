@@ -23,6 +23,9 @@ class WordOnlyFields(DataFields):
         'src_len': 'target_word_len',
         'tgt': 'label',
     }
+    needs_vocab = ('target_word', 'label')
+    needs_padding = ('target_word', )
+    needs_constants = ('target_word', )
 
 
 class EmbeddingOnlyFields(DataFields):
@@ -54,8 +57,9 @@ class MidSequenceProberFields(DataFields):
         'input', 'input_len', 'target_idx', 'label', 'target_ids',
     )
     _alias = {'tgt': 'label', 'src_len': 'input_len'}
-    _needs_vocab = ('input', 'label', 'target_ids')
-    _needs_constants = ('input', )
+    needs_vocab = ('input', 'label', 'target_ids')
+    needs_constants = ('input', )
+    needs_padding = ('input', )
 
 
 class SequenceClassificationWithSubwordsDataFields(DataFields):
@@ -192,25 +196,7 @@ class EmbeddingProberDataset(BaseDataset):
 
 class WordOnlySentenceProberDataset(BaseDataset):
 
-    data_recordclass = WordOnlyFields
-    constants = []
-
-    def load_or_create_vocabs(self):
-        vocab_pre = os.path.join(self.config.experiment_dir, 'vocab_')
-        needs_vocab = getattr(self.data_recordclass, '_needs_vocab',
-                              self.data_recordclass._fields)
-        self.vocabs = self.data_recordclass()
-        for field in needs_vocab:
-            vocab_fn = getattr(self.config, 'vocab_{}'.format(field),
-                               vocab_pre+field)
-            if field == 'label':
-                constants = []
-            else:
-                constants = ['SOS', 'EOS', 'PAD', 'UNK']
-            if os.path.exists(vocab_fn):
-                setattr(self.vocabs, field, Vocab(file=vocab_fn, frozen=True))
-            else:
-                setattr(self.vocabs, field, Vocab(constants=constants))
+    datafield_class = WordOnlyFields
 
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
@@ -222,29 +208,16 @@ class WordOnlySentenceProberDataset(BaseDataset):
         idx = int(idx)
         return WordOnlyFields(
             sentence=sent,
-            target_word=target,
+            target_word=list(target),
             target_idx=idx,
             target_word_len=len(target),
             label=label,
         )
 
     def to_idx(self):
-        words = []
-        lens = []
-        labels = []
-        for sample in self.raw:
-            idx = list(self.vocabs.target_word[c] for c in sample.target_word)
-            idx = [self.vocabs.target_word.SOS] + \
-                idx + [self.vocabs.target_word.EOS]
-            lens.append(len(idx))
-            words.append(idx)
-            if sample.label:
-                labels.append(self.vocabs.label[sample.label])
-            else:
-                labels.append(None)
-        self.mtx = WordOnlyFields(
-            target_word=words, target_word_len=lens, label=labels
-        )
+        super().to_idx()
+        # Include BOS and EOS
+        #self.mtx.target_word_len = np.array(self.mtx.target_word_len) + 2
 
     def print_sample(self, sample, stream):
         stream.write("{}\t{}\t{}\t{}\n".format(
@@ -257,19 +230,10 @@ class WordOnlySentenceProberDataset(BaseDataset):
             output = model_output[i].argmax().item()
             sample.label = self.vocabs.label.inv_lookup(output)
 
-    def __len__(self):
-        return len(self.raw)
-
-    def get_max_seqlen(self):
-        if hasattr(self.config, 'max_seqlen'):
-            return self.config.max_seqlen
-        return max(s.target_word_len for s in self.raw) + 2
-
 
 # TODO replace MidSentenceProberDataset with TokenInSequenceProberFields
 class MidSentenceProberDataset(BaseDataset):
-    data_recordclass = MidSequenceProberFields
-    constants = ['SOS', 'EOS', 'UNK', 'PAD']
+    datafield_class = MidSequenceProberFields
 
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
@@ -285,32 +249,19 @@ class MidSentenceProberDataset(BaseDataset):
             target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx
         else:
             target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx + len(raw_target) - 1
-        return self.data_recordclass(
+        return self.datafield_class(
             raw_sentence=raw_sent,
             raw_target=raw_target,
             raw_idx=raw_idx,
             input=input,
             input_len=len(input),
             target_idx=target_idx,
-            label=label,
+            label=label
         )
 
     def to_idx(self):
-        mtx = self.data_recordclass(input=[], input_len=[],
-                                    target_idx=[], label=[])
-        SOS = self.vocabs.input['SOS']
-        EOS = self.vocabs.input['EOS']
-        for sample in self.raw:
-            if sample.label:
-                mtx.label.append(self.vocabs.label[sample.label])
-            else:
-                mtx.label.append(None)
-            mtx.input_len.append(sample.input_len)
-            mtx.target_idx.append(sample.target_idx)
-            mtx.input.append(
-                [SOS] + [self.vocabs.input[s] for s in sample.input] + [EOS]
-            )
-        self.mtx = mtx
+        super().to_idx()
+        self.mtx.target_idx = np.array(self.mtx.target_idx) + 1
 
     def decode(self, model_output):
         for i, sample in enumerate(self.raw):
