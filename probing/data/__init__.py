@@ -1,8 +1,5 @@
-#! /usr/bin/env python
-
-from probing.data.classification_data import ClassificationDataset
-from probing.data.sentence_probe_data import WordOnlySentenceProberDataset
-from probing.data.sentence_probe_data import MidSentenceProberDataset
-from probing.data.sentence_probe_data import EmbeddingProberDataset
+from probing.data.sentence_probe_data import WLSTMDataset
+from probing.data.sentence_probe_data import SLSTMDataset
+from probing.data.sentence_probe_data import Word2vecProberDataset
 from probing.data.sentence_probe_data import SentenceProberDataset
 from probing.data.sentence_probe_data import SequenceClassificationWithSubwords

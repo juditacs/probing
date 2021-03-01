@@ -523,7 +523,7 @@ class TransformerForSequenceTagging(BaseModel):
         return loss
 
 
-class EmbeddingClassifier(BaseModel):
+class Word2vecEmbeddingClassifier(BaseModel):
 
     def __init__(self, config, dataset):
         super().__init__(config)

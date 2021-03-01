@@ -14,7 +14,7 @@ from transformers import AutoTokenizer
 from probing.data.base_data import BaseDataset, DataFields
 
 
-class WordOnlyFields(DataFields):
+class WLSTMFields(DataFields):
     _fields = (
         'probe_target', 'label', 'probe_target_len', 'raw_probe_target_idx',
         'raw_sentence',)
@@ -26,7 +26,7 @@ class WordOnlyFields(DataFields):
     needs_padding = ('probe_target', )
 
 
-class EmbeddingOnlyFields(DataFields):
+class Word2vecProberFields(DataFields):
     _fields = (
         'sentence', 'probe_target', 'probe_target_idx', 'label')
     _alias = {
@@ -40,7 +40,6 @@ class TokenInSequenceProberFields(DataFields):
         'raw_sentence', 'raw_target', 'raw_idx', 'label',
         'subword_tokens', 'input_len', 'probe_target', 'token_starts',
         'probe_target_idx',
-        #'tokens', 'num_tokens', 'target_idx', 'label', 'token_starts',
     )
     _alias = {
         'input': 'subword_tokens'
@@ -50,7 +49,7 @@ class TokenInSequenceProberFields(DataFields):
     needs_constants = ('subword_tokens', )
 
 
-class MidSequenceProberFields(DataFields):
+class SLSTMFields(DataFields):
     _fields = (
         'raw_sentence', 'raw_target', 'raw_idx',
         'input', 'input_len', 'target_idx', 'label',
@@ -65,9 +64,12 @@ class SequenceClassificationWithSubwordsDataFields(DataFields):
         'raw_sentence', 'labels',
         'sentence_len', 'tokens', 'sentence_subword_len', 'token_starts',
     )
-    _alias = {'input': 'tokens',
-              'input_len': 'sentence_subword_len',
-              'tgt': 'labels'}
+    _alias = {
+        'input': 'tokens',
+        'input_len': 'sentence_subword_len',
+        'label': 'labels',
+    }
+
     needs_vocab = ('tokens', 'labels')
     needs_padding = ('tokens', )
     needs_constants = ('tokens', )
@@ -110,9 +112,9 @@ class Embedding:
         return self.mtx.shape[1]
 
 
-class EmbeddingProberDataset(BaseDataset):
+class Word2vecProberDataset(BaseDataset):
 
-    datafield_class = EmbeddingOnlyFields
+    datafield_class = Word2vecProberFields
 
     def to_idx(self):
         vocab = set(r.probe_target for r in self.raw)
@@ -133,7 +135,7 @@ class EmbeddingProberDataset(BaseDataset):
                 labels.append(self.vocabs.label[r.label])
             else:
                 labels.append(None)
-        self.mtx = EmbeddingOnlyFields(
+        self.mtx = self.datafield_class(
             probe_target=word_vecs,
             label=labels
         )
@@ -145,7 +147,7 @@ class EmbeddingProberDataset(BaseDataset):
             label = fd[3]
         else:
             label = None
-        return EmbeddingOnlyFields(
+        return self.datafield_class(
             sentence=sent,
             probe_target=target,
             probe_target_idx=int(idx),
@@ -164,9 +166,9 @@ class EmbeddingProberDataset(BaseDataset):
             sample.label = self.vocabs.label.inv_lookup(output)
 
 
-class WordOnlySentenceProberDataset(BaseDataset):
+class WLSTMDataset(BaseDataset):
 
-    datafield_class = WordOnlyFields
+    datafield_class = WLSTMFields
 
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
@@ -176,7 +178,7 @@ class WordOnlySentenceProberDataset(BaseDataset):
             sent, target, idx = fd[:3]
             label = None
         idx = int(idx)
-        return WordOnlyFields(
+        return self.datafield_class(
             raw_sentence=sent,
             probe_target=list(target),
             raw_probe_target_idx=idx,
@@ -196,10 +198,9 @@ class WordOnlySentenceProberDataset(BaseDataset):
             sample.label = self.vocabs.label.inv_lookup(output)
 
 
-# TODO replace MidSentenceProberDataset with TokenInSequenceProberFields
-class MidSentenceProberDataset(BaseDataset):
+class SLSTMDataset(BaseDataset):
 
-    datafield_class = MidSequenceProberFields
+    datafield_class = SLSTMFields
 
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
@@ -238,7 +239,6 @@ class MidSentenceProberDataset(BaseDataset):
         stream.write("{}\t{}\t{}\t{}\n".format(
             sample.raw_sentence, sample.raw_target, sample.raw_idx, sample.label
         ))
-
 
 
 class SequenceClassificationWithSubwords(BaseDataset):
