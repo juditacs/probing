@@ -57,7 +57,7 @@ def compute_accuracy(reference, prediction):
                 pline = next(p)
             except StopIteration:
                 logging.error(f"Prediction file {prediction} shorter "
-                              "than reference {reference}")
+                              f"than reference {reference}")
                 return acc / samples
             if not rline.strip() and not pline.strip():
                 continue
