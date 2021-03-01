@@ -71,7 +71,7 @@ class Embedder(nn.Module):
         out = self.forward(sentences, sentence_lens)
         if self.layer_pooling == 'weighted_sum':
             w = self.softmax(self.weights)
-            return (w[:, None, None, None] * torch.stack(out)).sum(0)
+            return (w[:, None, None, None] * torch.stack(out)).sum(0).detach()
         if self.layer_pooling == 'all':
             return torch.stack(out)
         if self.layer_pooling == 'sum':

@@ -358,7 +358,7 @@ class BaseDataset:
             end = start + batch_size
             batch = {}
             for field, mtx in self.mtx.items():
-                if field in self.datafield_class.needs_vocab:
+                if field in self.datafield_class.needs_padding:
                     batch[field] = self.vocabs[field].pad(mtx[start:end])
                 else:
                     batch[field] = mtx[start:end]
