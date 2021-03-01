@@ -118,7 +118,7 @@ class BaseModel(nn.Module):
                         self.parameters(), self.config.clip)
                 for opt in self.optimizers:
                     opt.step()
-            target = torch.LongTensor(batch.tgt)
+            target = torch.LongTensor(batch.label)
             prediction = output.max(dim=-1)[1].cpu()
             correct = torch.eq(prediction, target)
             if hasattr(batch, 'tgt_len'):

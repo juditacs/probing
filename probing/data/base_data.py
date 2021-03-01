@@ -60,6 +60,8 @@ class Vocab:
             if use_padding:
                 self.pad_token = pad_token
                 self.vocab[self.pad_token] = 0
+                self.unk_token = unk_token
+                self.vocab[self.unk_token] = 1
             self.frozen = False
         self.__inv_vocab = None
 
@@ -92,13 +94,16 @@ class Vocab:
 
     def save(self, fn):
         with open(fn, 'w') as f:
-            if self.pad_token:
-                f.write(f"{self.pad_token}\t0\tpad_token\n")
-                f.write(f"{self.unk_token}\t1\tunk_token\n")
-                f.write(f"{self.bos_token}\t2\tbos_token\n")
-                f.write(f"{self.eos_token}\t3\teos_token\n")
+            offset = 0
+            for constant in ('pad_token', 'unk_token',
+                             'bos_token', 'eos_token'):
+                if getattr(self, constant, None) is not None:
+                    field = getattr(self, constant)
+                    id_ = self.vocab[field]
+                    f.write(f"{field}\t{id_}\t{constant}\n")
+                    offset += 1
             for symbol, id_ in self.vocab.items():
-                if self.pad_token and id_ < 4:
+                if self.pad_token and id_ < offset:
                     continue
                 f.write(f"{symbol}\t{id_}\n")
 
@@ -142,6 +147,7 @@ class DataFields:
     _alias = {}
     needs_vocab = ()
     needs_constants = ()
+    needs_padding = ()
 
     def __init__(self, *args, **kwargs):
         for field in self._fields:
@@ -152,6 +158,8 @@ class DataFields:
             setattr(self, kw, arg)
 
     def __setattr__(self, attr, value):
+        if attr in self._alias:
+            attr = self._alias[attr]
         if attr not in self._fields:
             raise AttributeError(
                 f"{self.__class__.__name__} has no attribute {attr}")
@@ -160,18 +168,9 @@ class DataFields:
     def __getitem__(self, field):
         return getattr(self, field)
 
-    # def __setitem__(self, idx, value):
-        # return setattr(self, self._fields[idx], value)
-
     def __iter__(self):
         for field in self._fields:
             yield getattr(self, field)
-
-    # def get_existing_fields_and_values(self):
-    #     for field in self._fields:
-    #         val = getattr(self, field)
-    #         if val is not None:
-    #             yield field, val
 
     def __getattr__(self, attr):
         if attr in self._alias:
@@ -227,8 +226,10 @@ class DataFields:
 
 class BaseDataset:
 
-    def __init__(self, config, stream_or_file, max_samples=None, share_vocabs_with=None):
+    def __init__(self, config, stream_or_file, max_samples=None,
+                 share_vocabs_with=None, is_unlabeled=False):
         self.config = config
+        self.is_unlabeled = is_unlabeled
         self.max_samples = max_samples
         if share_vocabs_with is None:
             self.load_or_create_vocabs()
@@ -315,12 +316,10 @@ class BaseDataset:
             return
         if self.config.sort_data_by_length is False:
             return
-        if sort_field is None:
-            sort_field = 'src_len'
-        if hasattr(self.mtx, sort_field):
-            order = np.argsort(-np.array(getattr(self.mtx, sort_field)))
+        if hasattr(self.mtx, 'input_len'):
+            order = np.argsort(-np.array(self.mtx.input_len))
         else:
-            order = np.argsort([-len(m) for m in self.mtx.src])
+            order = np.argsort([-len(m) for m in self.mtx.input])
         self.order = order
         ordered = []
         for m in self.mtx:
@@ -330,35 +329,21 @@ class BaseDataset:
                 ordered.append([m[idx] for idx in order])
         self.mtx = self.datafield_class(*ordered)
 
-    @property
-    def is_unlabeled(self):
-        return self.raw[0].tgt is None
-
     def decode_and_print(self, model_output, stream=stdout):
         self.decode(model_output)
         self.print_raw(stream)
 
     def decode(self, model_output):
-        if hasattr(self, 'order'):
-            new_order = np.argsort(self.order)
-            model_output = np.array(model_output)[new_order]
-        for i, sample in enumerate(self.raw):
-            output = list(model_output[i])
-            decoded = [self.vocabs.tgt.inv_lookup(s)
-                       for s in output]
-            if decoded[0] == 'SOS':
-                decoded = decoded[1:]
-            if 'EOS' in decoded:
-                decoded = decoded[:decoded.index('EOS')]
-            self.raw[i].tgt = decoded
+        raise NotImplementedError("Subclass of BaseData must define "
+                                  "decode")
 
     def print_raw(self, stream):
         for sample in self.raw:
             self.print_sample(sample, stream)
 
     def print_sample(self, sample, stream):
-        sample_str = "\t".join(" ".join(s) for s in sample)
-        stream.write(f"{sample_str}\n")
+        raise NotImplementedError("Subclass of BaseData must define "
+                                  "print_sample")
 
     def save_vocabs(self):
         vocab_list = list(self.vocabs._asdict().keys())

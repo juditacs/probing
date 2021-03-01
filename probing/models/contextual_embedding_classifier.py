@@ -192,7 +192,7 @@ class SentenceRepresentationProber(BaseModel):
         subword_pooling = self.config.subword_pooling
         batch_size = embedded.size(0)
         helper = np.arange(batch_size)
-        target_idx = np.array(batch.target_idx)
+        target_idx = np.array(batch.probe_target_idx)
         last = batch.token_starts[helper, target_idx + 1]
         first = batch.token_starts[helper, target_idx]
         target_vecs = []
@@ -210,7 +210,7 @@ class SentenceRepresentationProber(BaseModel):
         target_vecs = []
         batch_size = embedded.size(0)
         helper = np.arange(batch_size)
-        target_idx = np.array(batch.target_idx)
+        target_idx = np.array(batch.probe_target_idx)
         last = batch.token_starts[helper, target_idx + 1] - 1
         first = batch.token_starts[helper, target_idx]
         for wi in range(batch_size):
@@ -226,7 +226,7 @@ class SentenceRepresentationProber(BaseModel):
         batch_size = embedded.size(0)
         helper = np.arange(batch_size)
         w = self.subword_w
-        target_idx = np.array(batch.target_idx)
+        target_idx = np.array(batch.probe_target_idx)
         last_idx = batch.token_starts[helper, target_idx + 1] - 1
         first_idx = batch.token_starts[helper, target_idx]
         first = embedded[helper, first_idx]
@@ -239,7 +239,7 @@ class SentenceRepresentationProber(BaseModel):
         helper = np.arange(batch_size)
         target_vecs = []
 
-        target_idx = np.array(batch.target_idx)
+        target_idx = np.array(batch.probe_target_idx)
         last_idx = batch.token_starts[helper, target_idx + 1]
         first_idx = batch.token_starts[helper, target_idx]
 
@@ -254,7 +254,7 @@ class SentenceRepresentationProber(BaseModel):
         batch_size = embedded.size(0)
         helper = np.arange(batch_size)
 
-        target_idx = np.array(batch.target_idx)
+        target_idx = np.array(batch.probe_target_idx)
         last_idx = batch.token_starts[helper, target_idx + 1]
         first_idx = batch.token_starts[helper, target_idx]
 
@@ -267,7 +267,7 @@ class SentenceRepresentationProber(BaseModel):
                 self.all_weights.append({
                     'input': batch.input[wi],
                     'idx': batch.raw_idx[wi],
-                    'starts': batch.target_ids[wi],
+                    'starts': batch.token_starts[wi],
                     'weights': weights.data.cpu().numpy(),
                     'probs': sweights.data.cpu().numpy(),
                     'label': batch.label[wi],
@@ -282,8 +282,8 @@ class SentenceRepresentationProber(BaseModel):
             target_vecs = self.pooling_func[subword_pooling](batch)
         else:
             # caching not supported
-            X = torch.LongTensor(batch.tokens)
-            embedded = self.embedder.embed(X, batch.num_tokens)
+            X = torch.LongTensor(batch.input)
+            embedded = self.embedder.embed(X, batch.input_len)
             if self.layer_pooling == 'sum':
                 embedded = embedded.sum(0)
             else:
@@ -293,16 +293,16 @@ class SentenceRepresentationProber(BaseModel):
         return mlp_out
 
     def _forward_first_last(self, batch):
-        cache_target_idx = np.array(batch.target_idx)
+        cache_target_idx = np.array(batch.probe_target_idx)
         cache_key = (
-            tuple(np.array(batch.tokens).flat),
+            tuple(np.array(batch.input).flat),
             tuple(cache_target_idx.flat))
         if cache_key not in self._cache:
-            X = torch.LongTensor(batch.tokens)
-            embedded = self.embedder.embed(X, batch.num_tokens)
+            X = torch.LongTensor(batch.input)
+            embedded = self.embedder.embed(X, batch.input_len)
             batch_size = embedded.size(1)
             helper = np.arange(batch_size)
-            target_idx = np.array(batch.target_idx)
+            target_idx = np.array(batch.probe_target_idx)
             subword_pooling = self.config.subword_pooling
             if subword_pooling == 'first':
                 idx = batch.token_starts[helper, target_idx]
@@ -312,7 +312,7 @@ class SentenceRepresentationProber(BaseModel):
                 raise ValueError(f"Subword pooling {subword_pooling} "
                                  "with caching is not supported.")
             if self.config.shift_target:
-                shift_max = np.array(batch.num_tokens) - 1
+                shift_max = np.array(batch.input_len) - 1
                 idx += self.config.shift_target
                 idx = np.minimum(idx, shift_max)
                 idx = np.clip(idx, 0, shift_max.max())
@@ -539,7 +539,7 @@ class EmbeddingClassifier(BaseModel):
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, batch):
-        mlp_in = to_cuda(torch.FloatTensor(batch.target_word))
+        mlp_in = to_cuda(torch.FloatTensor(batch.input))
         mlp_in = self.dropout(mlp_in)
         return self.mlp(mlp_in)
 

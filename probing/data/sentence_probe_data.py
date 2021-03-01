@@ -11,53 +11,51 @@ import numpy as np
 
 from transformers import AutoTokenizer
 
-from probing.data.base_data import BaseDataset, Vocab, DataFields
+from probing.data.base_data import BaseDataset, DataFields
 
 
 class WordOnlyFields(DataFields):
-    _fields = ('sentence', 'target_word', 'target_word_len', 'target_idx',
-               'label')
+    _fields = (
+        'probe_target', 'label', 'probe_target_len', 'raw_probe_target_idx',
+        'raw_sentence',)
     _alias = {
-        'input': 'target_word',
-        'input_len': 'target_word_len',
-        'src_len': 'target_word_len',
-        'tgt': 'label',
+        'input': 'probe_target',
+        'input_len': 'probe_target_len',
     }
-    needs_vocab = ('target_word', 'label')
-    needs_padding = ('target_word', )
-    needs_constants = ('target_word', )
+    needs_vocab = ('probe_target', 'label')
+    needs_padding = ('probe_target', )
 
 
 class EmbeddingOnlyFields(DataFields):
-    _fields = ('sentence', 'target_word', 'target_word_idx', 'label')
+    _fields = (
+        'sentence', 'probe_target', 'probe_target_idx', 'label')
     _alias = {
-        'tgt': 'label',
-        'src': 'target_word',
+        'input': 'probe_target',
     }
+    needs_vocab = ('label',)
 
 
 class TokenInSequenceProberFields(DataFields):
     _fields = (
-        'raw_sentence', 'raw_target', 'raw_idx',
-        'tokens', 'num_tokens', 'target_idx', 'label', 'token_starts',
+        'raw_sentence', 'raw_target', 'raw_idx', 'label',
+        'subword_tokens', 'input_len', 'probe_target', 'token_starts',
+        'probe_target_idx',
+        #'tokens', 'num_tokens', 'target_idx', 'label', 'token_starts',
     )
     _alias = {
-        'tgt': 'label',
-        'src_len': 'num_tokens',
-        'input_len': 'num_tokens'}
-    # token_starts needs a vocabulary because we manually set PAD=1000
-    needs_vocab = ('tokens', 'label')
-    needs_padding = ('tokens', )
-    needs_constants = ('tokens', )
+        'input': 'subword_tokens'
+    }
+    needs_vocab = ('subword_tokens', 'label')
+    needs_padding = ('subword_tokens', )
+    needs_constants = ('subword_tokens', )
 
 
 class MidSequenceProberFields(DataFields):
     _fields = (
         'raw_sentence', 'raw_target', 'raw_idx',
-        'input', 'input_len', 'target_idx', 'label', 'target_ids',
+        'input', 'input_len', 'target_idx', 'label',
     )
-    _alias = {'tgt': 'label', 'src_len': 'input_len'}
-    needs_vocab = ('input', 'label', 'target_ids')
+    needs_vocab = ('input', 'label', )
     needs_constants = ('input', )
     needs_padding = ('input', )
 
@@ -113,28 +111,11 @@ class Embedding:
 
 
 class EmbeddingProberDataset(BaseDataset):
-    constants = []
-    data_recordclass = EmbeddingOnlyFields
 
-    def load_or_create_vocabs(self):
-        vocab_pre = os.path.join(self.config.experiment_dir, 'vocab_')
-        needs_vocab = getattr(self.data_recordclass, '_needs_vocab',
-                              self.data_recordclass._fields)
-        self.vocabs = self.data_recordclass()
-        for field in needs_vocab:
-            vocab_fn = getattr(self.config, 'vocab_{}'.format(field),
-                               vocab_pre+field)
-            if field == 'label':
-                constants = []
-            else:
-                constants = ['SOS', 'EOS', 'PAD', 'UNK']
-            if os.path.exists(vocab_fn):
-                setattr(self.vocabs, field, Vocab(file=vocab_fn, frozen=True))
-            else:
-                setattr(self.vocabs, field, Vocab(constants=constants))
+    datafield_class = EmbeddingOnlyFields
 
     def to_idx(self):
-        vocab = set(r.target_word for r in self.raw)
+        vocab = set(r.probe_target for r in self.raw)
         if self.config.embedding == 'discover':
             language = self.config.train_file.split("/")[-2]
             emb_fn = os.path.join(os.environ['HOME'], 'resources',
@@ -147,13 +128,13 @@ class EmbeddingProberDataset(BaseDataset):
         word_vecs = []
         labels = []
         for r in self.raw:
-            word_vecs.append(self.embedding[r.target_word])
+            word_vecs.append(self.embedding[r.probe_target])
             if r.label:
                 labels.append(self.vocabs.label[r.label])
             else:
                 labels.append(None)
         self.mtx = EmbeddingOnlyFields(
-            target_word=word_vecs,
+            probe_target=word_vecs,
             label=labels
         )
 
@@ -166,32 +147,21 @@ class EmbeddingProberDataset(BaseDataset):
             label = None
         return EmbeddingOnlyFields(
             sentence=sent,
-            target_word=target,
-            target_word_idx=int(idx),
+            probe_target=target,
+            probe_target_idx=int(idx),
             label=label
         )
 
     def print_sample(self, sample, stream):
         stream.write("{}\t{}\t{}\t{}\n".format(
-            sample.sentence, sample.target_word,
-            sample.target_word_idx, sample.label
+            sample.sentence, sample.probe_target,
+            sample.probe_target_idx, sample.label
         ))
 
     def decode(self, model_output):
         for i, sample in enumerate(self.raw):
             output = model_output[i].argmax().item()
             sample.label = self.vocabs.label.inv_lookup(output)
-
-    def batched_iter(self, batch_size):
-        starts = list(range(0, len(self), batch_size))
-        if self.is_unlabeled is False and self.config.shuffle_batches:
-            np.random.shuffle(starts)
-        for start in starts:
-            end = start + batch_size
-            yield EmbeddingOnlyFields(
-                target_word=self.mtx.target_word[start:end],
-                label=self.mtx.label[start:end]
-            )
 
 
 class WordOnlySentenceProberDataset(BaseDataset):
@@ -207,22 +177,17 @@ class WordOnlySentenceProberDataset(BaseDataset):
             label = None
         idx = int(idx)
         return WordOnlyFields(
-            sentence=sent,
-            target_word=list(target),
-            target_idx=idx,
-            target_word_len=len(target),
+            raw_sentence=sent,
+            probe_target=list(target),
+            raw_probe_target_idx=idx,
+            input_len=len(target),
             label=label,
         )
 
-    def to_idx(self):
-        super().to_idx()
-        # Include BOS and EOS
-        #self.mtx.target_word_len = np.array(self.mtx.target_word_len) + 2
-
     def print_sample(self, sample, stream):
         stream.write("{}\t{}\t{}\t{}\n".format(
-            sample.sentence, sample.target_word,
-            sample.target_idx, sample.label
+            sample.raw_sentence, ''.join(sample.probe_target),
+            sample.raw_probe_target_idx, sample.label
         ))
 
     def decode(self, model_output):
@@ -233,6 +198,7 @@ class WordOnlySentenceProberDataset(BaseDataset):
 
 # TODO replace MidSentenceProberDataset with TokenInSequenceProberFields
 class MidSentenceProberDataset(BaseDataset):
+
     datafield_class = MidSequenceProberFields
 
     def extract_sample_from_line(self, line):
@@ -276,21 +242,18 @@ class MidSentenceProberDataset(BaseDataset):
 
 
 class SequenceClassificationWithSubwords(BaseDataset):
+
     datafield_class = SequenceClassificationWithSubwordsDataFields
 
     def __init__(self, config, stream_or_file, max_samples=None,
-                 share_vocabs_with=None, **kwargs):
-        self.config = config
-        self.max_samples = max_samples
-        global_key = f'{self.config.model_name}_tokenizer'
+                 share_vocabs_with=None, is_unlabeled=False):
+        global_key = f'{config.model_name}_tokenizer'
         if global_key in globals():
             self.tokenizer = globals()[global_key]
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
             globals()[global_key] = self.tokenizer
-        self.load_or_create_vocabs()
-        self.load_stream_or_file(stream_or_file)
-        self.to_idx()
+        super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
     def load_or_create_vocabs(self):
         super().load_or_create_vocabs()
@@ -395,43 +358,40 @@ class SequenceClassificationWithSubwords(BaseDataset):
 
 
 class SentenceProberDataset(BaseDataset):
+
     datafield_class = TokenInSequenceProberFields
 
-    def __init__(self, config, stream_or_file, max_samples=None, **kwargs):
-        self.config = config
-        self.max_samples = max_samples
-        global_key = f'{self.config.model_name}_tokenizer'
+    def __init__(self, config, stream_or_file, max_samples=None,
+                 share_vocabs_with=None, is_unlabeled=False):
+        global_key = f'{config.model_name}_tokenizer'
         if global_key in globals():
             self.tokenizer = globals()[global_key]
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(
-                self.config.model_name)
+                config.model_name)
             globals()[global_key] = self.tokenizer
         self.MASK = self.tokenizer.mask_token
-        self.mask_positions = set(self.config.mask_positions)
-        self.load_or_create_vocabs()
-        self.load_stream_or_file(stream_or_file)
-        self.to_idx()
-        self.sort_data_by_length()
+        self.mask_positions = set(config.mask_positions)
+        super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
     def load_or_create_vocabs(self):
         super().load_or_create_vocabs()
-        self.vocabs.tokens.vocab = self.tokenizer.vocab
-        self.vocabs.tokens.pad_token = self.tokenizer.pad_token
-        self.vocabs.tokens.bos_token = self.tokenizer.cls_token
-        self.vocabs.tokens.eos_token = self.tokenizer.sep_token
-        self.vocabs.tokens.unk_token = self.tokenizer.unk_token
-        self.vocabs.tokens.frozen = True
+        self.vocabs.subword_tokens.vocab = self.tokenizer.vocab
+        self.vocabs.subword_tokens.pad_token = self.tokenizer.pad_token
+        self.vocabs.subword_tokens.bos_token = self.tokenizer.cls_token
+        self.vocabs.subword_tokens.eos_token = self.tokenizer.sep_token
+        self.vocabs.subword_tokens.unk_token = self.tokenizer.unk_token
+        self.vocabs.subword_tokens.frozen = True
 
     def to_idx(self):
         super().to_idx()
         prefixed_token_starts = []
         for ti, tokstarts in enumerate(self.mtx.token_starts):
             tokstarts = [t+1 for t in tokstarts]
-            token_starts = [0] + tokstarts + [len(self.mtx.tokens[ti]) + 1]
+            token_starts = [0] + tokstarts + [len(self.mtx.subword_tokens[ti]) + 1]
             prefixed_token_starts.append(token_starts)
         self.mtx.token_starts = prefixed_token_starts
-        self.mtx.target_idx = np.array(self.mtx.target_idx) + 1
+        self.mtx.probe_target_idx = np.array(self.mtx.probe_target_idx) + 1
 
     def batched_iter(self, batch_size):
         for batch in super().batched_iter(batch_size):
@@ -486,9 +446,9 @@ class SentenceProberDataset(BaseDataset):
             raw_sentence=raw_sent,
             raw_target=raw_target,
             raw_idx=raw_idx,
-            tokens=merged,
-            num_tokens=len(merged),
-            target_idx=raw_idx,
+            probe_target_idx=raw_idx,
+            subword_tokens=merged,
+            input_len=len(merged),
             token_starts=token_starts,
             label=label,
         )

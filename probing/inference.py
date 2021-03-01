@@ -46,7 +46,9 @@ class Inference(Experiment):
         self.config = InferenceConfig.from_yaml(
             os.path.join(experiment_dir, 'config.yaml'))
         data_class = getattr(data_module, self.config.dataset_class)
-        self.test_data = data_class(self.config, stream_or_file, max_samples=max_samples)
+        self.test_data = data_class(self.config, stream_or_file, max_samples=max_samples,
+                                    is_unlabeled=True)
+        self.test_data.is_unlabeled = True
         self.set_random_seeds()
         self.init_model(model_file)
 
