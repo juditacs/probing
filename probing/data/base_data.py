@@ -208,7 +208,7 @@ class DataFields:
     def keys(self):
         for field in self._fields:
             value = getattr(self, field, None)
-            if value:
+            if value is not None:
                 yield field
 
     def values(self):

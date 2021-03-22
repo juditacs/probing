@@ -433,7 +433,7 @@ class SentenceProberDataset(BaseDataset):
         prefixed_token_starts = []
         for ti, tokstarts in enumerate(self.mtx.token_starts):
             tokstarts = [t+1 for t in tokstarts]
-            token_starts = [0] + tokstarts + [len(self.mtx.subword_tokens[ti]) + 1]
+            token_starts = [0] + tokstarts + [len(self.mtx.subword_tokens[ti]) - 1]
             prefixed_token_starts.append(token_starts)
         self.mtx.token_starts = prefixed_token_starts
         self.mtx.probe_target_idx = np.array(self.mtx.probe_target_idx) + 1
