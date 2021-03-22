@@ -7,6 +7,7 @@
 
 import os
 import gzip
+import logging
 import numpy as np
 
 from transformers import AutoTokenizer
