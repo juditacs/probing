@@ -37,8 +37,6 @@ class Config:
         # transformers model configuration
         'mask_positions': [],
         'subword_mlp_size': 50,
-        # MidSequence char prober
-        'probe_first_char': False,
         # HuggingFace Transformers
         'cache_seqlen_limit': 0,
         'layer_pooling': 'sum',
@@ -48,6 +46,9 @@ class Config:
         'exclude_short_sentences': False,
         'randomize_embedding_weights': False,
         'use_character_tokenization': False,
+        # MidSequence char prober
+        'probe_first_char': False,
+        'external_tokenizer': None,
     }
     # path variables support environment variable
     # ${MYVAR} will be manually expanded

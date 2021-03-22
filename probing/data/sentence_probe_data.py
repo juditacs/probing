@@ -202,6 +202,14 @@ class SLSTMDataset(BaseDataset):
 
     datafield_class = SLSTMFields
 
+    def __init__(self, config, stream_or_file, **kwargs):
+        if config.external_tokenizer:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                config.external_tokenizer)
+        else:
+            self.tokenizer = None
+        super().__init__(config, stream_or_file, **kwargs)
+
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
         raw_sent, raw_target, raw_idx = fd[:3]
@@ -210,12 +218,26 @@ class SLSTMDataset(BaseDataset):
         else:
             label = None
         raw_idx = int(raw_idx)
-        input = list(raw_sent)
-        words = raw_sent.split(' ')
-        if self.config.probe_first_char:
-            target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx
+        if self.tokenizer:
+            words = raw_sent.split(' ')
+            subwords = []
+            for idx, word in enumerate(words):
+                if self.config.probe_first_char:
+                    if idx == raw_idx:
+                        target_idx = len(subwords)
+                    subwords.extend(self.tokenizer.tokenize(word))
+                else:
+                    subwords.extend(self.tokenizer.tokenize(word))
+                    if idx == raw_idx:
+                        target_idx = len(subwords) - 1
+            input = subwords
         else:
-            target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx + len(raw_target) - 1
+            input = list(raw_sent)
+            words = raw_sent.split(' ')
+            if self.config.probe_first_char:
+                target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx
+            else:
+                target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx + len(raw_target) - 1
         return self.datafield_class(
             raw_sentence=raw_sent,
             raw_target=raw_target,
