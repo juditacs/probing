@@ -465,9 +465,15 @@ class SentenceProberDataset(BaseDataset):
             if ti - raw_idx in self.mask_positions:
                 pieces = [self.MASK]
             else:
-                if self.config.use_character_tokenization:
+                if self.config.use_character_tokenization == 'full':
                     pieces = [token[0]]
                     pieces.extend(f'##{c}' for c in token[1:])
+                elif self.config.use_character_tokenization == 'target_only':
+                    if ti == raw_idx:
+                        pieces = [token[0]]
+                        pieces.extend(f'##{c}' for c in token[1:])
+                    else:
+                        pieces = self.tokenizer.tokenize(token)
                 else:
                     pieces = self.tokenizer.tokenize(token)
             tokenized.append(pieces)
