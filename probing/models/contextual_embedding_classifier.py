@@ -24,16 +24,22 @@ def to_cuda(var):
 
 
 class Embedder(nn.Module):
-    def __init__(self, model_name, layer_pooling, use_cache=False):
+    def __init__(self, model_name, layer_pooling, use_cache=False,
+                 randomize_embedding_weights=False):
         super().__init__()
-        global_key = f'{model_name}_model'
+        global_key = (f'{model_name}_model', randomize_embedding_weights)
         if global_key in globals():
             self.embedder = globals()[global_key]
         else:
             self.config = AutoConfig.from_pretrained(
                 model_name, output_hidden_states=True)
-            self.embedder = AutoModel.from_pretrained(
-                model_name, config=self.config)
+            if randomize_embedding_weights:
+                logging.info(f"Loading {model_name} with random weights.")
+                self.embedder = AutoModel.from_config(self.config)
+            else:
+                logging.info(f"Loading {model_name}.")
+                self.embedder = AutoModel.from_pretrained(
+                    model_name, config=self.config)
             globals()[global_key] = self.embedder
             for p in self.embedder.parameters():
                 p.requires_grad = False
@@ -115,8 +121,10 @@ class SentenceRepresentationProber(BaseModel):
     def __init__(self, config, dataset):
         super().__init__(config)
         self.dataset = dataset
+        randweights = self.config.randomize_embedding_weights
         self.embedder = Embedder(self.config.model_name, use_cache=False,
-                                 layer_pooling='all')
+                                 layer_pooling='all',
+                                 randomize_embedding_weights=randweights)
         self.output_size = len(dataset.vocabs.label)
         self.dropout = nn.Dropout(self.config.dropout)
         self.criterion = nn.CrossEntropyLoss()
@@ -341,9 +349,11 @@ class TransformerForSequenceTagging(BaseModel):
     def __init__(self, config, dataset):
         super().__init__(config)
         self.dataset = dataset
+        randweights = self.config.randomize_embedding_weights
         self.embedder = Embedder(
             self.config.model_name, use_cache=False,
-            layer_pooling=self.config.layer_pooling)
+            layer_pooling=self.config.layer_pooling,
+            randomize_embedding_weights=randweights)
         self.output_size = len(dataset.vocabs.labels)
         self.dropout = nn.Dropout(self.config.dropout)
         mlp_input_size = self.embedder.hidden_size
