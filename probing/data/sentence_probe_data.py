@@ -16,8 +16,8 @@ from probing.data.base_data import BaseDataset, DataFields
 
 class WLSTMFields(DataFields):
     _fields = (
-        'probe_target', 'label', 'probe_target_len', 'raw_probe_target_idx',
-        'raw_sentence',)
+        'probe_target', 'label', 'probe_target_len', 'target_idx',
+        'raw_idx', 'raw_target', 'raw_sentence',)
     _alias = {
         'input': 'probe_target',
         'input_len': 'probe_target_len',
@@ -170,6 +170,14 @@ class WLSTMDataset(BaseDataset):
 
     datafield_class = WLSTMFields
 
+    def __init__(self, config, stream_or_file, **kwargs):
+        if config.external_tokenizer:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                config.external_tokenizer)
+        else:
+            self.tokenizer = None
+        super().__init__(config, stream_or_file, **kwargs)
+
     def extract_sample_from_line(self, line):
         fd = line.rstrip("\n").split("\t")
         if len(fd) > 3:
@@ -178,18 +186,27 @@ class WLSTMDataset(BaseDataset):
             sent, target, idx = fd[:3]
             label = None
         idx = int(idx)
+        if self.tokenizer:
+            tokens = self.tokenizer.tokenize(target)
+        else:
+            tokens = list(target)
+        if self.config.probe_first:
+            target_idx = 0
+        else:
+            target_idx = len(tokens) - 1
         return self.datafield_class(
             raw_sentence=sent,
-            probe_target=list(target),
-            raw_probe_target_idx=idx,
-            input_len=len(target),
+            probe_target=tokens,
+            target_idx=target_idx,
+            raw_idx=idx,
+            raw_target=target,
+            input_len=len(tokens),
             label=label,
         )
 
     def print_sample(self, sample, stream):
         stream.write("{}\t{}\t{}\t{}\n".format(
-            sample.raw_sentence, ''.join(sample.probe_target),
-            sample.raw_probe_target_idx, sample.label
+            sample.raw_sentence, sample.raw_target, sample.raw_idx, sample.label
         ))
 
     def decode(self, model_output):
@@ -222,7 +239,7 @@ class SLSTMDataset(BaseDataset):
             words = raw_sent.split(' ')
             subwords = []
             for idx, word in enumerate(words):
-                if self.config.probe_first_char:
+                if self.config.probe_first:
                     if idx == raw_idx:
                         target_idx = len(subwords)
                     subwords.extend(self.tokenizer.tokenize(word))
@@ -234,7 +251,7 @@ class SLSTMDataset(BaseDataset):
         else:
             input = list(raw_sent)
             words = raw_sent.split(' ')
-            if self.config.probe_first_char:
+            if self.config.probe_first:
                 target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx
             else:
                 target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx + len(raw_target) - 1
