@@ -372,6 +372,11 @@ class SentenceProberDataset(BaseDataset):
             globals()[global_key] = self.tokenizer
         self.MASK = self.tokenizer.mask_token
         self.mask_positions = set(config.mask_positions)
+        if config.use_character_tokenization:
+            if not config.model_name.startswith('bert-'):
+                raise ValueError("Character tokenization is only "
+                                "supported for BERT models.")
+            logging.info("Using character tokenization.")
         super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
     def load_or_create_vocabs(self):
@@ -420,7 +425,11 @@ class SentenceProberDataset(BaseDataset):
             if ti - raw_idx in self.mask_positions:
                 pieces = [self.MASK]
             else:
-                pieces = self.tokenizer.tokenize(token)
+                if self.config.use_character_tokenization:
+                    pieces = [token[0]]
+                    pieces.extend(f'##{c}' for c in token[1:])
+                else:
+                    pieces = self.tokenizer.tokenize(token)
             tokenized.append(pieces)
         # Add [SEP] token start.
         # tokenized.append([self.tokenizer.sep_token])

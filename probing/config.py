@@ -47,6 +47,7 @@ class Config:
         'shift_target': 0,
         'exclude_short_sentences': False,
         'randomize_embedding_weights': False,
+        'use_character_tokenization': False,
     }
     # path variables support environment variable
     # ${MYVAR} will be manually expanded
