@@ -269,6 +269,7 @@ class SLSTMDataset(BaseDataset):
     def to_idx(self):
         super().to_idx()
         self.mtx.target_idx = np.array(self.mtx.target_idx) + 1
+        self.mtx.input_len = np.array(self.mtx.input_len) + 2
 
     def decode(self, model_output):
         for i, sample in enumerate(self.raw):
