@@ -458,51 +458,50 @@ class SentenceProberDataset(BaseDataset):
         else:
             label = None
         raw_idx = int(raw_idx)
+        # Only include the target from the sentence.
+        if self.config.target_only:
+            tokenized = [self.tokenizer.tokenize(raw_target)]
+            target_idx = 0
         # Build a list-of-lists from the tokenized words.
         # This allows shuffling it later.
-        # tokenized = [[self.tokenizer.cls_token]]
-        tokenized = []
-        for ti, token in enumerate(raw_sent.split(" ")):
-            if ti - raw_idx in self.mask_positions:
-                pieces = [self.MASK]
-            else:
-                if self.config.use_character_tokenization == 'full':
-                    pieces = [token[0]]
-                    pieces.extend(f'##{c}' for c in token[1:])
-                elif self.config.use_character_tokenization == 'target_only':
-                    if ti == raw_idx:
+        else:
+            tokenized = []
+            for ti, token in enumerate(raw_sent.split(" ")):
+                if ti - raw_idx in self.mask_positions:
+                    pieces = [self.MASK]
+                else:
+                    if self.config.use_character_tokenization == 'full':
                         pieces = [token[0]]
                         pieces.extend(f'##{c}' for c in token[1:])
+                    elif self.config.use_character_tokenization == 'target_only':
+                        if ti == raw_idx:
+                            pieces = [token[0]]
+                            pieces.extend(f'##{c}' for c in token[1:])
+                        else:
+                            pieces = self.tokenizer.tokenize(token)
                     else:
                         pieces = self.tokenizer.tokenize(token)
-                else:
-                    pieces = self.tokenizer.tokenize(token)
-            tokenized.append(pieces)
-        # Add [SEP] token start.
-        # tokenized.append([self.tokenizer.sep_token])
-        # Perform BOW.
-        if self.config.bow:
-            all_idx = np.arange(len(tokenized))
-            np.random.shuffle(all_idx)
-            # all_idx = np.concatenate(([0], all_idx, [len(tokenized)-1]))
-            tokenized = [tokenized[i] for i in all_idx]
-            target_map = np.argsort(all_idx)
-            # Add 1 to include [CLS].
-            target_idx = target_map[raw_idx]
-        else:
-            # Add 1 to include [CLS].
-            target_idx = raw_idx
+                tokenized.append(pieces)
+            # Add [SEP] token start.
+            # Perform BOW.
+            if self.config.bow:
+                all_idx = np.arange(len(tokenized))
+                np.random.shuffle(all_idx)
+                tokenized = [tokenized[i] for i in all_idx]
+                target_map = np.argsort(all_idx)
+                target_idx = target_map[raw_idx]
+            else:
+                target_idx = raw_idx
         merged = []
         token_starts = []
         for pieces in tokenized:
             token_starts.append(len(merged))
             merged.extend(pieces)
-        target_idx = token_starts[target_idx]
         return self.datafield_class(
             raw_sentence=raw_sent,
             raw_target=raw_target,
             raw_idx=raw_idx,
-            probe_target_idx=raw_idx,
+            probe_target_idx=target_idx,
             subword_tokens=merged,
             input_len=len(merged),
             token_starts=token_starts,

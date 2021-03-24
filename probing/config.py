@@ -46,6 +46,9 @@ class Config:
         'exclude_short_sentences': False,
         'randomize_embedding_weights': False,
         'use_character_tokenization': False,
+        # Discard all tokens except the target token.
+        # This is different from masking all tokens.
+        'target_only': False,
         # SLSTM char prober
         'probe_first': False,
         'external_tokenizer': None,
