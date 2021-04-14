@@ -143,7 +143,7 @@ class SentenceRepresentationProber(BaseModel):
                 batch_first=True,
                 bidirectional=True,
             )
-        elif self.config.subword_pooling == 'mlp':
+        elif self.config.subword_pooling == 'attn':
             self.subword_mlp = MLP(
                 self.embedder.hidden_size,
                 layers=[self.config.subword_mlp_size],
@@ -170,7 +170,7 @@ class SentenceRepresentationProber(BaseModel):
             'last2': self._forward_last2,
             'f+l': self._forward_first_plus_last,
             'lstm': self._forward_lstm,
-            'mlp': self._forward_mlp,
+            'attn': self._forward_mlp,
         }
         self.layer_pooling = config.layer_pooling
         if self.layer_pooling == 'weighted_sum':
@@ -367,7 +367,7 @@ class TransformerForSequenceTagging(BaseModel):
                 batch_first=True,
                 bidirectional=True,
             )
-        elif self.config.subword_pooling == 'mlp':
+        elif self.config.subword_pooling == 'attn':
             self.subword_mlp = MLP(
                 input_size=self.embedder.hidden_size,
                 layers=[self.config.subword_mlp_size],
@@ -396,7 +396,7 @@ class TransformerForSequenceTagging(BaseModel):
             'last2': self._forward_last2,
             'f+l': self._forward_first_plus_last,
             'lstm': self._forward_lstm,
-            'mlp': self._forward_mlp,
+            'attn': self._forward_mlp,
         }
 
     def forward(self, batch):
