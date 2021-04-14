@@ -1,0 +1,21 @@
+model: SentenceRepresentationProber
+dataset_class: SentenceProberDataset
+experiment_dir: ${HOME}/workdir/exps/morph
+
+model_name: bert-base-multilingual-cased
+
+subword_pooling: last
+layer_pooling: weighted_sum
+
+dropout: 0.2
+
+mlp_layers: [50]
+mlp_nonlinearity: ReLU
+
+epochs: 200
+batch_size: 128
+optimizer: Adam
+
+sort_data_by_length: true
+shuffle_batches: true
+save_metric: dev_acc
