@@ -165,9 +165,6 @@ class Config:
                 continue
             if k in Config.path_variables and hasattr(self, k):
                 v = os.path.abspath(getattr(self, k))
-            # do not save shared parameters
-            if k+'_src' in dir(self) and k+'_tgt' in dir(self):
-                continue
             else:
                 v = getattr(self, k, None)
             d[k.lstrip('_')] = v
