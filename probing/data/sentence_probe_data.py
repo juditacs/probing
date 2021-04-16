@@ -298,7 +298,7 @@ class SequenceClassificationWithSubwords(BaseDataset):
 
     def load_or_create_vocabs(self):
         super().load_or_create_vocabs()
-        self.vocabs.tokens.vocab = self.tokenizer.vocab
+        self.vocabs.tokens.vocab = self.tokenizer.get_vocab()
         self.vocabs.tokens.pad_token = self.tokenizer.pad_token
         self.vocabs.tokens.bos_token = self.tokenizer.cls_token
         self.vocabs.tokens.eos_token = self.tokenizer.sep_token
@@ -422,7 +422,7 @@ class SentenceProberDataset(BaseDataset):
 
     def load_or_create_vocabs(self):
         super().load_or_create_vocabs()
-        self.vocabs.subword_tokens.vocab = self.tokenizer.vocab
+        self.vocabs.subword_tokens.vocab = self.tokenizer.get_vocab()
         self.vocabs.subword_tokens.pad_token = self.tokenizer.pad_token
         self.vocabs.subword_tokens.bos_token = self.tokenizer.cls_token
         self.vocabs.subword_tokens.eos_token = self.tokenizer.sep_token
