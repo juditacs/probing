@@ -136,7 +136,7 @@ class Experiment:
             min_ = int(self.result.running_time // 60)
             sec = int(self.result.running_time - min_ * 60)
             logging.info(
-                f"Experiment finished in {min}m{sec}s, "
+                f"Experiment finished in {min_}m{sec}s, "
                 f"max dev acc: {max(self.result.dev_acc)}")
         else:
             logging.info("Experiment failed, no successful training epochs.")
