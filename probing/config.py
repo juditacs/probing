@@ -145,8 +145,8 @@ class Config:
                 continue
             if callable(getattr(self, attr)):
                 continue
-            out.append("{}={}".format(attr, getattr(self, attr)))
-        return "{}({})".format(self.__class__.__name__, ", ".join(out))
+            out.append(f"{attr}={getattr(self, attr)}")
+        return f"{self.__class__.__name__}({', '.join(out)})"
 
     def save(self, save_fn=None):
         if save_fn is None:

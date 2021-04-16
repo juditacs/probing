@@ -104,17 +104,16 @@ class Experiment:
     def init_model(self):
         model_class = getattr(models, self.config.model)
         self.model = model_class(self.config, self.train_data)
-        logging.info("Number of parameters: {}".format(
-            sum(p.nelement() for p in self.model.parameters() if p.requires_grad)
-        ))
+        num_params = sum(p.nelement() for p in self.model.parameters()
+            if p.requires_grad)
+        logging.info(f"Number of parameters: {num_params}")
         if use_cuda:
             self.model = self.model.cuda()
         else:
             logging.warning("CUDA not available")
 
     def __enter__(self):
-        logging.info("Starting experiment: {}".format(
-            self.config.experiment_dir))
+        logging.info(f"Starting experiment: {self.config.experiment_dir}")
         self.result = Result()
         self.result.node = platform.node()
         self.result.parameters = sum(
@@ -132,13 +131,13 @@ class Experiment:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.result.end()
-        logging.info("Experiment dir: {}".format(self.config.experiment_dir))
+        logging.info(f"Experiment dir: {self.config.experiment_dir}")
         if len(self.result.dev_loss) > 0:
             min_ = int(self.result.running_time // 60)
             sec = int(self.result.running_time - min_ * 60)
-            logging.info("Experiment finished in {}m{}s, "
-                         "max dev acc: {}".format(
-                             min_, sec, max(self.result.dev_acc)))
+            logging.info(
+                f"Experiment finished in {min}m{sec}s, "
+                f"max dev acc: {max(self.result.dev_acc)}")
         else:
             logging.info("Experiment failed, no successful training epochs.")
         if exc_type is None:

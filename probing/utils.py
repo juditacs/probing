@@ -36,8 +36,7 @@ def run_command(cmd):
 
 def check_and_get_commit_hash(debug):
     src_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    stdout, stderr = run_command(
-        "cd {}; git status --porcelain".format(src_path))
+    stdout, stderr = run_command(f"cd {src_path}; git status --porcelain")
 
     unstaged = []
     staged = []
@@ -61,11 +60,11 @@ def check_and_get_commit_hash(debug):
         CEND = '\033[0m'
         error_msg = []
         if len(unstaged) > 0:
-            error_msg.append("Unstaged files:{}".format(CRED))
+            error_msg.append(f"Unstaged files:{CRED}")
             error_msg.extend(unstaged)
             error_msg[-1] += CEND
         if len(staged) > 0:
-            error_msg.append("Staged but not committed:{}".format(CGREEN))
+            error_msg.append(f"Staged but not committed:{CGREEN}")
             error_msg.extend(staged)
             error_msg[-1] += CEND
         error_msg = "\n".join(error_msg)
@@ -75,8 +74,7 @@ def check_and_get_commit_hash(debug):
             raise UncleanWorkingDirectoryException(error_msg)
 
     commit_hash, _ = run_command(
-        "cd {}; git log --pretty=format:'%H' -n 1".format(
-            src_path))
+        f"cd {src_path}; git log --pretty=format:'%H' -n 1")
     return commit_hash
 
 
@@ -88,3 +86,18 @@ def find_last_model(experiment_dir):
         'model.epoch_'), os.listdir(experiment_dir))
     last_epoch = max(saves, key=lambda f: int(f.split("_")[-1]))
     return os.path.join(experiment_dir, last_epoch)
+
+
+def quick_load_experiments_tsv(exp_dir):
+    exp_tsv = os.path.join(exp_dir, "experiments.tsv")
+    if os.path.exists(exp_tsv):
+        logging.info(f"Loading experiments.tsv from {exp_dir}")
+        df = pd.read_table(exp_tsv, sep="\t")
+        for col in df.columns:
+            if 'running_time' in col:
+                df[col] = pd.to_timedelta(df[col])
+            elif '_time' in col:
+                df[col] = pd.to_datetime(df[col])
+        return df
+    else:
+        logging.warning(f"File {exp_tsv} not found.")

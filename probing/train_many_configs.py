@@ -36,7 +36,7 @@ def main():
     config_generator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(config_generator)
     for n in range(args.N):
-        logging.info("Running experiment round {}/{}".format(n+1, args.N))
+        logging.info(f"Running experiment round {n+1}/{args.N}")
         for config in config_generator.generate_configs(args.config):
             with Experiment(config, train_data=args.train_file,
                             dev_data=args.dev_file, debug=args.debug) as e:
