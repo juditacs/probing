@@ -68,10 +68,7 @@ def check_and_get_commit_hash(debug):
             error_msg.extend(staged)
             error_msg[-1] += CEND
         error_msg = "\n".join(error_msg)
-        if debug:
-            logging.warning(error_msg)
-        else:
-            raise UncleanWorkingDirectoryException(error_msg)
+        logging.warning(error_msg)
 
     commit_hash, _ = run_command(
         f"cd {src_path}; git log --pretty=format:'%H' -n 1")
