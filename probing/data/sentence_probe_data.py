@@ -292,7 +292,7 @@ class SequenceClassificationWithSubwords(BaseDataset):
         if global_key in globals():
             self.tokenizer = globals()[global_key]
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(config.model_name, do_lower_case=False)
             globals()[global_key] = self.tokenizer
         super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
@@ -409,7 +409,7 @@ class SentenceProberDataset(BaseDataset):
             self.tokenizer = globals()[global_key]
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(
-                config.model_name)
+                config.model_name, do_lower_case=False)
             globals()[global_key] = self.tokenizer
         self.MASK = self.tokenizer.mask_token
         self.mask_positions = set(config.mask_positions)
