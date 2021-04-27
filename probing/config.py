@@ -40,7 +40,6 @@ class Config:
         # HuggingFace Transformers
         'cache_seqlen_limit': 0,
         'layer_pooling': 'sum',
-        'save_mlp_weights': False,
         'bow': False,
         'shift_target': 0,
         'exclude_short_sentences': False,

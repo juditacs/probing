@@ -24,7 +24,7 @@ def to_cuda(var):
 
 
 class Embedder(nn.Module):
-    def __init__(self, model_name, layer_pooling, use_cache=False,
+    def __init__(self, model_name, layer_pooling,
                  randomize_embedding_weights=False):
         super().__init__()
         global_key = (f'{model_name}_model', randomize_embedding_weights)
@@ -53,15 +53,6 @@ class Embedder(nn.Module):
             self.weights = nn.Parameter(
                 torch.ones(self.n_layer, dtype=torch.float))
             self.softmax = nn.Softmax(0)
-        if use_cache:
-            if layer_pooling in ('weighted_sum', 'all'):
-                logging.warning(
-                    f"Caching not supported with {layer_pooling} pooling")
-                self._cache = None
-            else:
-                self._cache = {}
-        else:
-            self._cache = None
 
     def forward(self, sentences, sentence_lens):
         self.embedder.train(False)
@@ -72,8 +63,7 @@ class Embedder(nn.Module):
             out = self.embedder(sentences, attention_mask=mask)
             return out[-1]
 
-    def _embed(self, sentences, sentence_lens):
-        sentences = to_cuda(sentences)
+    def embed(self, sentences, sentence_lens):
         out = self.forward(sentences, sentence_lens)
         if self.layer_pooling == 'weighted_sum':
             w = self.softmax(self.weights)
@@ -89,16 +79,6 @@ class Embedder(nn.Module):
         if isinstance(self.layer_pooling, int):
             return out[self.layer_pooling]
         raise ValueError(f"Unknown pooling mechanism: {self.layer_pooling}")
-
-    def embed(self, sentences, sentence_lens):
-        if self._cache is None:
-            return self._embed(sentences, sentence_lens)
-
-        cache_key = (tuple(sentences.numpy().flat), tuple(sentences.size()))
-        if cache_key not in self._cache:
-            self._cache[cache_key] = self._embed(sentences, sentence_lens)
-
-        return self._cache[cache_key]
 
     def get_sizes(self):
         with torch.no_grad():
@@ -122,7 +102,7 @@ class SentenceRepresentationProber(BaseModel):
         super().__init__(config)
         self.dataset = dataset
         randweights = self.config.randomize_embedding_weights
-        self.embedder = Embedder(self.config.model_name, use_cache=False,
+        self.embedder = Embedder(self.config.model_name,
                                  layer_pooling='all',
                                  randomize_embedding_weights=randweights)
         self.output_size = len(dataset.vocabs.label)
@@ -159,8 +139,6 @@ class SentenceRepresentationProber(BaseModel):
             nonlinearity=self.config.mlp_nonlinearity,
             output_size=self.output_size,
         )
-        if self.config.save_mlp_weights:
-            self.all_weights = []
         self.pooling_func = {
             'first': self._forward_first_last,
             'last': self._forward_first_last,
@@ -180,9 +158,6 @@ class SentenceRepresentationProber(BaseModel):
         self._cache = {}
 
     def check_params(self):
-        # if self.config.subword_pooling not in ('first', 'last'):
-        #     raise ValueError("Subword pooling other than first and "
-        #                      "last don't work atm.")
         if self.config.shift_target != 0:
             if self.config.subword_pooling not in ('first', 'last'):
                 raise ValueError(
@@ -271,15 +246,6 @@ class SentenceRepresentationProber(BaseModel):
             mlp_in = embedded[wi, first_idx[wi]:last_idx[wi]]
             weights = self.subword_mlp(mlp_in)
             sweights = self.softmax(weights).transpose(0, 1)
-            if self.config.save_mlp_weights:
-                self.all_weights.append({
-                    'input': batch.input[wi],
-                    'idx': batch.raw_idx[wi],
-                    'starts': batch.token_starts[wi],
-                    'weights': weights.data.cpu().numpy(),
-                    'probs': sweights.data.cpu().numpy(),
-                    'label': batch.label[wi],
-                })
             target = sweights.mm(mlp_in).squeeze(0)
             target_vecs.append(target)
         return torch.stack(target_vecs)
@@ -291,6 +257,7 @@ class SentenceRepresentationProber(BaseModel):
         else:
             # caching not supported
             X = torch.LongTensor(batch.input)
+            X = to_cuda(X)
             embedded = self.embedder.embed(X, batch.input_len)
             if self.layer_pooling == 'sum':
                 embedded = embedded.sum(0)
@@ -307,6 +274,7 @@ class SentenceRepresentationProber(BaseModel):
             tuple(cache_target_idx.flat))
         if cache_key not in self._cache:
             X = torch.LongTensor(batch.input)
+            X = to_cuda(X)
             embedded = self.embedder.embed(X, batch.input_len)
             batch_size = embedded.size(1)
             helper = np.arange(batch_size)
@@ -351,7 +319,7 @@ class TransformerForSequenceTagging(BaseModel):
         self.dataset = dataset
         randweights = self.config.randomize_embedding_weights
         self.embedder = Embedder(
-            self.config.model_name, use_cache=False,
+            self.config.model_name,
             layer_pooling=self.config.layer_pooling,
             randomize_embedding_weights=randweights)
         self.output_size = len(dataset.vocabs.labels)
@@ -408,6 +376,7 @@ class TransformerForSequenceTagging(BaseModel):
 
     def _forward_lstm(self, batch):
         X = torch.LongTensor(batch.input)
+        X = to_cuda(X)
         embedded = self.embedder.embed(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden_size = embedded.size()
         token_lens = batch.token_starts[:, 1:] - batch.token_starts[:, :-1]
@@ -438,6 +407,7 @@ class TransformerForSequenceTagging(BaseModel):
 
     def _forward_mlp(self, batch):
         X = torch.LongTensor(batch.input)
+        X = to_cuda(X)
         embedded = self.embedder.embed(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden = embedded.size()
         mlp_weights = self.subword_mlp(embedded).view(batch_size, seqlen)
@@ -458,6 +428,7 @@ class TransformerForSequenceTagging(BaseModel):
 
     def _forward_first_plus_last(self, batch):
         X = torch.LongTensor(batch.input)
+        X = to_cuda(X)
         embedded = self.embedder.embed(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden = embedded.size()
         w = self.subword_w
@@ -473,6 +444,7 @@ class TransformerForSequenceTagging(BaseModel):
 
     def _forward_last2(self, batch):
         X = torch.LongTensor(batch.input)
+        X = to_cuda(X)
         embedded = self.embedder.embed(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden_size = embedded.size()
         outputs = []
@@ -497,6 +469,7 @@ class TransformerForSequenceTagging(BaseModel):
             batch_size = X.size(0)
             batch_ids = []
             token_ids = []
+            X = to_cuda(X)
             embedded = self.embedder.embed(X, batch.sentence_subword_len)
             if subword_pooling in ('first', 'last'):
                 for bi in range(batch_size):
