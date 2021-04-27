@@ -51,6 +51,7 @@ class Config:
         # SLSTM char prober
         'probe_first': False,
         'external_tokenizer': None,
+        'train_base_model': False,
     }
     # path variables support environment variable
     # ${MYVAR} will be manually expanded

@@ -25,7 +25,8 @@ def to_cuda(var):
 
 class Embedder(nn.Module):
     def __init__(self, model_name, layer_pooling,
-                 randomize_embedding_weights=False):
+                 randomize_embedding_weights=False,
+                 train_base_model=False):
         super().__init__()
         global_key = (f'{model_name}_model', randomize_embedding_weights)
         if global_key in globals():
@@ -41,8 +42,10 @@ class Embedder(nn.Module):
                 self.embedder = AutoModel.from_pretrained(
                     model_name, config=self.config)
             globals()[global_key] = self.embedder
+        if not train_base_model:
             for p in self.embedder.parameters():
                 p.requires_grad = False
+        self.train_base_model = train_base_model
         self.get_sizes()
         try:
             layer_pooling = int(layer_pooling)
@@ -55,16 +58,19 @@ class Embedder(nn.Module):
             self.softmax = nn.Softmax(0)
 
     def forward(self, sentences, sentence_lens):
-        self.embedder.train(False)
-        with torch.no_grad():
+        if self.train_base_model:
+            self.embedder.train(True)
             mask = torch.arange(sentences.size(1)) < \
                     torch.LongTensor(sentence_lens).unsqueeze(1)
             mask = to_cuda(mask.long())
-            out = self.embedder(sentences, attention_mask=mask)
-            return out[-1]
-
-    def embed(self, sentences, sentence_lens):
-        out = self.forward(sentences, sentence_lens)
+            out = self.embedder(sentences, attention_mask=mask)[-1]
+        else:
+            self.embedder.train(False)
+            with torch.no_grad():
+                mask = torch.arange(sentences.size(1)) < \
+                        torch.LongTensor(sentence_lens).unsqueeze(1)
+                mask = to_cuda(mask.long())
+                out = self.embedder(sentences, attention_mask=mask)[-1]
         if self.layer_pooling == 'weighted_sum':
             w = self.softmax(self.weights)
             return (w[:, None, None, None] * torch.stack(out)).sum(0).detach()
@@ -104,7 +110,9 @@ class SentenceRepresentationProber(BaseModel):
         randweights = self.config.randomize_embedding_weights
         self.embedder = Embedder(self.config.model_name,
                                  layer_pooling='all',
-                                 randomize_embedding_weights=randweights)
+                                 randomize_embedding_weights=randweights,
+                                 train_base_model=self.config.train_base_model,
+                                 )
         self.output_size = len(dataset.vocabs.label)
         self.dropout = nn.Dropout(self.config.dropout)
         self.criterion = nn.CrossEntropyLoss()
@@ -258,7 +266,7 @@ class SentenceRepresentationProber(BaseModel):
             # caching not supported
             X = torch.LongTensor(batch.input)
             X = to_cuda(X)
-            embedded = self.embedder.embed(X, batch.input_len)
+            embedded = self.embedder(X, batch.input_len)
             if self.layer_pooling == 'sum':
                 embedded = embedded.sum(0)
             else:
@@ -267,40 +275,53 @@ class SentenceRepresentationProber(BaseModel):
         mlp_out = self.mlp(target_vecs)
         return mlp_out
 
-    def _forward_first_last(self, batch):
-        cache_target_idx = np.array(batch.probe_target_idx)
-        cache_key = (
-            tuple(np.array(batch.input).flat),
-            tuple(cache_target_idx.flat))
-        if cache_key not in self._cache:
-            X = torch.LongTensor(batch.input)
-            X = to_cuda(X)
-            embedded = self.embedder.embed(X, batch.input_len)
-            batch_size = embedded.size(1)
-            helper = np.arange(batch_size)
-            target_idx = np.array(batch.probe_target_idx)
-            subword_pooling = self.config.subword_pooling
-            if subword_pooling == 'first':
-                idx = batch.token_starts[helper, target_idx]
-            elif subword_pooling == 'last':
-                idx = batch.token_starts[helper, target_idx + 1] - 1
-            else:
-                raise ValueError(f"Subword pooling {subword_pooling} "
-                                 "with caching is not supported.")
-            if self.config.shift_target:
-                shift_max = np.array(batch.input_len) - 1
-                idx += self.config.shift_target
-                idx = np.minimum(idx, shift_max)
-                idx = np.clip(idx, 0, shift_max.max())
+    def _get_first_last_tensors(self, batch):
+        input = torch.LongTensor(batch.input)
+        input = to_cuda(input)
+        embedded = self.embedder(input, batch.input_len)
+        batch_size = embedded.size(1)
+        helper = np.arange(batch_size)
+        target_idx = np.array(batch.probe_target_idx)
+        subword_pooling = self.config.subword_pooling
+        if subword_pooling == 'first':
+            idx = batch.token_starts[helper, target_idx]
+        elif subword_pooling == 'last':
+            idx = batch.token_starts[helper, target_idx + 1] - 1
+        else:
+            raise ValueError(f"Subword pooling {subword_pooling} "
+                                "with caching is not supported.")
+        if self.config.shift_target:
+            shift_max = np.array(batch.input_len) - 1
+            idx += self.config.shift_target
+            idx = np.minimum(idx, shift_max)
+            idx = np.clip(idx, 0, shift_max.max())
 
-            target_vecs = embedded[:, helper, idx]
-            if self.layer_pooling == 'weighted_sum':
+        target_vecs = embedded[:, helper, idx]
+        return target_vecs
+
+    def _get_layer_pooled(self, target_vecs):
+        if self.layer_pooling == 'weighted_sum':
+            return target_vecs
+        elif self.layer_pooling == 'sum':
+            return target_vecs.sum(0)
+        else:
+            return target_vecs[self.layer_pooling]
+
+    def _forward_first_last(self, batch):
+
+        if self.config.train_base_model:
+            target_vecs = self._get_first_last_tensors(batch)
+            target_vecs = self._get_layer_pooled(target_vecs)
+        else:
+            cache_target_idx = np.array(batch.probe_target_idx)
+            cache_key = (
+                tuple(np.array(batch.input).flat),
+                tuple(cache_target_idx.flat))
+            if cache_key not in self._cache:
+                target_vecs = self._get_first_last_tensors(batch)
+                target_vecs = self._get_layer_pooled(target_vecs)
                 self._cache[cache_key] = target_vecs
-            elif self.layer_pooling == 'sum':
-                self._cache[cache_key] = target_vecs.sum(0)
-            else:
-                self._cache[cache_key] = target_vecs[self.layer_pooling]
-        target_vecs = self._cache[cache_key]
+            target_vecs = self._cache[cache_key]
 
         if self.layer_pooling == 'weighted_sum':
             w = self.softmax(self.weights)
@@ -321,7 +342,8 @@ class TransformerForSequenceTagging(BaseModel):
         self.embedder = Embedder(
             self.config.model_name,
             layer_pooling=self.config.layer_pooling,
-            randomize_embedding_weights=randweights)
+            randomize_embedding_weights=randweights,
+            train_base_model=config.train_base_model)
         self.output_size = len(dataset.vocabs.labels)
         self.dropout = nn.Dropout(self.config.dropout)
         mlp_input_size = self.embedder.hidden_size
@@ -377,7 +399,7 @@ class TransformerForSequenceTagging(BaseModel):
     def _forward_lstm(self, batch):
         X = torch.LongTensor(batch.input)
         X = to_cuda(X)
-        embedded = self.embedder.embed(X, batch.sentence_subword_len)
+        embedded = self.embedder(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden_size = embedded.size()
         token_lens = batch.token_starts[:, 1:] - batch.token_starts[:, :-1]
         token_maxlen = token_lens.max()
@@ -395,9 +417,6 @@ class TransformerForSequenceTagging(BaseModel):
                     tok_vecs = torch.cat((tok_vecs, this_pad))
                 all_token_vectors.append(tok_vecs)
                 all_token_lens.append(this_size)
-                # _, (h, c) = self.subword_lstm(tok_vecs)
-                # h = torch.cat((h[0], h[1]), dim=-1)
-                # out.append(h[0])
         lstm_in = torch.stack(all_token_vectors)
         seq = torch.nn.utils.rnn.pack_padded_sequence(
             lstm_in, all_token_lens, enforce_sorted=False, batch_first=True)
@@ -408,7 +427,7 @@ class TransformerForSequenceTagging(BaseModel):
     def _forward_mlp(self, batch):
         X = torch.LongTensor(batch.input)
         X = to_cuda(X)
-        embedded = self.embedder.embed(X, batch.sentence_subword_len)
+        embedded = self.embedder(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden = embedded.size()
         mlp_weights = self.subword_mlp(embedded).view(batch_size, seqlen)
         outputs = []
@@ -429,7 +448,7 @@ class TransformerForSequenceTagging(BaseModel):
     def _forward_first_plus_last(self, batch):
         X = torch.LongTensor(batch.input)
         X = to_cuda(X)
-        embedded = self.embedder.embed(X, batch.sentence_subword_len)
+        embedded = self.embedder(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden = embedded.size()
         w = self.subword_w
         outputs = []
@@ -445,7 +464,7 @@ class TransformerForSequenceTagging(BaseModel):
     def _forward_last2(self, batch):
         X = torch.LongTensor(batch.input)
         X = to_cuda(X)
-        embedded = self.embedder.embed(X, batch.sentence_subword_len)
+        embedded = self.embedder(X, batch.sentence_subword_len)
         batch_size, seqlen, hidden_size = embedded.size()
         outputs = []
         pad = to_cuda(torch.zeros(hidden_size))
@@ -461,44 +480,67 @@ class TransformerForSequenceTagging(BaseModel):
                 outputs.append(vec)
         return torch.stack(outputs)
 
-    def _forward_with_cache(self, batch):
+    def _get_first_last_tensors(self, batch):
         subword_pooling = self.config.subword_pooling
         X = torch.LongTensor(batch.input)
-        cache_key = tuple(np.array(batch.input).flat)
-        if cache_key not in self._cache:
-            batch_size = X.size(0)
-            batch_ids = []
-            token_ids = []
-            X = to_cuda(X)
-            embedded = self.embedder.embed(X, batch.sentence_subword_len)
+        batch_size = X.size(0)
+        batch_ids = []
+        token_ids = []
+        X = to_cuda(X)
+        embedded = self.embedder(X, batch.sentence_subword_len)
+        for bi in range(batch_size):
+            sentence_len = batch.sentence_len[bi]
+            batch_ids.append(np.repeat(bi, sentence_len))
+            if subword_pooling == 'first':
+                token_ids.append(batch.token_starts[bi][1:sentence_len + 1])
+            elif subword_pooling == 'last':
+                token_ids.append(
+                    np.array(batch.token_starts[bi][2:sentence_len + 2]) - 1)
+        batch_ids = np.concatenate(batch_ids)
+        token_ids = np.concatenate(token_ids)
+        return embedded[batch_ids, token_ids]
+
+    def _get_elementwise_pooled(self, batch):
+        subword_pooling = self.config.subword_pooling
+        X = torch.LongTensor(batch.input)
+        batch_size = X.size(0)
+        batch_ids = []
+        token_ids = []
+        X = to_cuda(X)
+        embedded = self.embedder(X, batch.sentence_subword_len)
+        outs = []
+        for bi in range(batch_size):
+            for ti in range(batch.sentence_len[bi]):
+                first = batch.token_starts[bi][ti+1]
+                last = batch.token_starts[bi][ti+2]
+                if subword_pooling == 'sum':
+                    vec = embedded[bi, first:last].sum(axis=0)
+                elif subword_pooling == 'avg':
+                    vec = embedded[bi, first:last].mean(axis=0)
+                elif subword_pooling == 'max':
+                    vec = embedded[bi, first:last].max(axis=0).values
+                outs.append(vec)
+        return torch.stack(outs)
+
+    def _forward_with_cache(self, batch):
+
+        subword_pooling = self.config.subword_pooling
+
+        if self.config.train_base_model:
             if subword_pooling in ('first', 'last'):
-                for bi in range(batch_size):
-                    sentence_len = batch.sentence_len[bi]
-                    batch_ids.append(np.repeat(bi, sentence_len))
-                    if subword_pooling == 'first':
-                        token_ids.append(batch.token_starts[bi][1:sentence_len + 1])
-                    elif subword_pooling == 'last':
-                        token_ids.append(
-                            np.array(batch.token_starts[bi][2:sentence_len + 2]) - 1)
-                batch_ids = np.concatenate(batch_ids)
-                token_ids = np.concatenate(token_ids)
-                out = embedded[batch_ids, token_ids]
-            elif subword_pooling in ('max', 'avg', 'sum'):
-                outs = []
-                for bi in range(batch_size):
-                    for ti in range(batch.sentence_len[bi]):
-                        first = batch.token_starts[bi][ti+1]
-                        last = batch.token_starts[bi][ti+2]
-                        if subword_pooling == 'sum':
-                            vec = embedded[bi, first:last].sum(axis=0)
-                        elif subword_pooling == 'avg':
-                            vec = embedded[bi, first:last].mean(axis=0)
-                        elif subword_pooling == 'max':
-                            vec = embedded[bi, first:last].max(axis=0).values
-                        outs.append(vec)
-                out = torch.stack(outs)
-            self._cache[cache_key] = out
-        return self._cache[cache_key]
+                out = self._get_first_last_tensors(batch)
+            elif subword_pooling in ('max', 'sum', 'avg'):
+                out = self._get_elementwise_pooled(batch)
+        else:
+            cache_key = tuple(np.array(batch.input).flat)
+            if cache_key not in self._cache:
+                if subword_pooling in ('first', 'last'):
+                    out = self._get_first_last_tensors(batch)
+                elif subword_pooling in ('max', 'sum', 'avg'):
+                    out = self._get_elementwise_pooled(batch)
+                self._cache[cache_key] = out
+            out = self._cache[cache_key]
+        return out
 
     def compute_loss(self, target, output):
         target = to_cuda(torch.LongTensor(target.labels)).view(-1)
