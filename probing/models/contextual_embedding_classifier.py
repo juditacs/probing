@@ -28,21 +28,16 @@ class Embedder(nn.Module):
                  randomize_embedding_weights=False,
                  train_base_model=False):
         super().__init__()
-        global_key = (f'{model_name}_model', randomize_embedding_weights)
-        if global_key in globals():
-            self.embedder = globals()[global_key]
+        if train_base_model:
+            logging.info(f"Loading {model_name}. Model caching is not "
+                "supported when finetuning.")
+            self.load_base_model(model_name, randomize_embedding_weights)
         else:
-            self.config = AutoConfig.from_pretrained(
-                model_name, output_hidden_states=True)
-            if randomize_embedding_weights:
-                logging.info(f"Loading {model_name} with random weights.")
-                self.embedder = AutoModel.from_config(self.config)
-            else:
-                logging.info(f"Loading {model_name}.")
-                self.embedder = AutoModel.from_pretrained(
-                    model_name, config=self.config)
-            globals()[global_key] = self.embedder
-        if not train_base_model:
+            global_key = (f'{model_name}_model', randomize_embedding_weights)
+            if global_key not in globals():
+                self.load_base_model(model_name, randomize_embedding_weights)
+                globals()[global_key] = self.embedder
+            self.embedder = globals()[global_key]
             for p in self.embedder.parameters():
                 p.requires_grad = False
         self.train_base_model = train_base_model
@@ -56,6 +51,17 @@ class Embedder(nn.Module):
             self.weights = nn.Parameter(
                 torch.ones(self.n_layer, dtype=torch.float))
             self.softmax = nn.Softmax(0)
+
+    def load_base_model(self, model_name, randomize_embedding_weights):
+        self.config = AutoConfig.from_pretrained(
+            model_name, output_hidden_states=True)
+        if randomize_embedding_weights:
+            logging.info(f"Loading {model_name} with random weights.")
+            self.embedder = AutoModel.from_config(self.config)
+        else:
+            logging.info(f"Loading {model_name}.")
+            self.embedder = AutoModel.from_pretrained(
+                model_name, config=self.config)
 
     def forward(self, sentences, sentence_lens):
         if self.train_base_model:
