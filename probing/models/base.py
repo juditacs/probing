@@ -143,8 +143,6 @@ class BaseModel(nn.Module):
         if epoch < self.config.save_min_epoch:
             return False
         if self.config.save_metric == 'dev_loss':
-            # FIXME why was this added?
-            # loss = dev_loss if dev_loss is not None else train_loss
             loss = result.dev_loss[-1]
             if not hasattr(self, 'min_loss') or self.min_loss > loss:
                 self.min_loss = loss

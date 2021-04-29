@@ -104,6 +104,8 @@ class Embedder(nn.Module):
             self.hidden_size = out[0].size(-1)
 
     def state_dict(self, *args, **kwargs):
+        if self.train_base_model:
+            return super().state_dict(*args, **kwargs)
         if self.layer_pooling == 'weighted_sum':
             args[0]['{}weights'.format(args[1])] = self.weights
         return args[0]
