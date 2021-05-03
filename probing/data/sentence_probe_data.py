@@ -173,8 +173,9 @@ class WLSTMDataset(BaseDataset):
 
     def __init__(self, config, stream_or_file, **kwargs):
         if config.external_tokenizer:
+            lower = 'uncased' in config.model_name
             self.tokenizer = AutoTokenizer.from_pretrained(
-                config.external_tokenizer)
+                config.model_name, do_lower_case=lower)
         else:
             self.tokenizer = None
         super().__init__(config, stream_or_file, **kwargs)
@@ -222,8 +223,9 @@ class SLSTMDataset(BaseDataset):
 
     def __init__(self, config, stream_or_file, **kwargs):
         if config.external_tokenizer:
+            lower = 'uncased' in config.model_name
             self.tokenizer = AutoTokenizer.from_pretrained(
-                config.external_tokenizer)
+                config.model_name, do_lower_case=lower)
         else:
             self.tokenizer = None
         super().__init__(config, stream_or_file, **kwargs)
@@ -292,7 +294,9 @@ class SequenceClassificationWithSubwords(BaseDataset):
         if global_key in globals():
             self.tokenizer = globals()[global_key]
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained(config.model_name, do_lower_case=False)
+            lower = 'uncased' in config.model_name
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                config.model_name, do_lower_case=lower)
             globals()[global_key] = self.tokenizer
         super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
@@ -408,8 +412,9 @@ class SentenceProberDataset(BaseDataset):
         if global_key in globals():
             self.tokenizer = globals()[global_key]
         else:
+            lower = 'uncased' in config.model_name
             self.tokenizer = AutoTokenizer.from_pretrained(
-                config.model_name, do_lower_case=False)
+                config.model_name, do_lower_case=lower)
             globals()[global_key] = self.tokenizer
         self.MASK = self.tokenizer.mask_token
         self.mask_positions = set(config.mask_positions)
