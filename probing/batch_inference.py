@@ -11,6 +11,9 @@ import os
 import logging
 from sys import stdin, stdout
 import yaml
+import gc
+
+import torch
 
 from probing.inference import Inference
 
@@ -96,6 +99,8 @@ def main():
                     logging.info(f"{experiment_dir} test acc: {acc}")
                     with open(test_acc, 'w') as f:
                         f.write(f"{acc}\n")
+                    gc.collect()
+                    torch.cuda.empty_cache()
             except NotAnExperimentDir:
                 logging.info(f"{experiment_dir}: no config.yaml, skipping")
         if args.run_on_dev:
@@ -109,6 +114,8 @@ def main():
                     logging.info(f"{experiment_dir} dev acc: {acc}")
                     with open(dev_acc, 'w') as f:
                         f.write(f"{acc}\n")
+                    gc.collect()
+                    torch.cuda.empty_cache()
             except NotAnExperimentDir:
                 logging.info(f"{experiment_dir}: no config.yaml, skipping")
 
