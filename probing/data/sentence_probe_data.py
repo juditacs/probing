@@ -9,6 +9,7 @@ import os
 import gzip
 import logging
 import numpy as np
+import unidecode
 
 from transformers import AutoTokenizer
 
@@ -340,7 +341,10 @@ class SequenceClassificationWithSubwords(BaseDataset):
             if len(fd) > 1:
                 labels.append(fd[1])
             token_starts.append(len(subwords))
-            pieces = self.tokenizer.tokenize(fd[0])
+            token = fd[0]
+            if self.config.remove_diacritics:
+                token = unidecode.unidecode(token)
+            pieces = self.tokenizer.tokenize(token)
             subwords.extend(pieces)
         token_starts.append(len(subwords))
         if len(labels) == 0:
@@ -465,7 +469,9 @@ class SentenceProberDataset(BaseDataset):
         raw_idx = int(raw_idx)
         # Only include the target from the sentence.
         if self.config.target_only:
-            tokenized = [self.tokenizer.tokenize(raw_target)]
+            if self.config.remove_diacritics:
+                target = unidecode.unidecode(raw_target)
+            tokenized = [self.tokenizer.tokenize(target)]
             target_idx = 0
         # Build a list-of-lists from the tokenized words.
         # This allows shuffling it later.
@@ -475,6 +481,8 @@ class SentenceProberDataset(BaseDataset):
                 if ti - raw_idx in self.mask_positions:
                     pieces = [self.MASK]
                 else:
+                    if self.config.remove_diacritics:
+                        token = unidecode.unidecode(token)
                     if self.config.use_character_tokenization == 'full':
                         pieces = [token[0]]
                         pieces.extend(f'##{c}' for c in token[1:])

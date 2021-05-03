@@ -52,6 +52,7 @@ class Config:
         'probe_first': False,
         'external_tokenizer': None,
         'train_base_model': False,
+        'remove_diacritics': False,
     }
     # path variables support environment variable
     # ${MYVAR} will be manually expanded
