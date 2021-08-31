@@ -76,6 +76,9 @@ class SequenceClassifier(BaseModel):
             embedding_size=self.config.embedding_size,
             embedding_dropout=self.config.dropout,
         )
+        if self.config.freeze_lstm_encoder:
+            for p in self.lstm.parameters():
+                p.requires_grad = False
         hidden = self.config.hidden_size
         self.mlp = MLP(
             input_size=hidden,
