@@ -472,6 +472,8 @@ class SentenceProberDataset(BaseDataset):
         if self.config.target_only:
             if self.config.remove_diacritics:
                 target = unidecode.unidecode(raw_target)
+            else:
+                target = raw_target
             tokenized = [self.tokenizer.tokenize(target)]
             target_idx = 0
         # Build a list-of-lists from the tokenized words.
