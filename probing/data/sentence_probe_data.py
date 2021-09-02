@@ -447,6 +447,7 @@ class SentenceProberDataset(BaseDataset):
             prefixed_token_starts.append(token_starts)
         self.mtx.token_starts = prefixed_token_starts
         self.mtx.probe_target_idx = np.array(self.mtx.probe_target_idx) + 1
+        self.mtx.input_len = np.array(self.mtx.input_len) + 2
 
     def batched_iter(self, batch_size):
         for batch in super().batched_iter(batch_size):
