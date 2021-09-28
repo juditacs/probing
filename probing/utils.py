@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2018 Judit Acs <judit@sch.bme.hu>
+# Copyright © 2021 Judit Acs <judit@sch.bme.hu>
 #
 # Distributed under terms of the MIT license.
 
