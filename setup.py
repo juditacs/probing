@@ -25,5 +25,6 @@ setuptools.setup(
         'torch>=1.7',
         'pandas',
         'transformers',
+        'scikit-learn',
     ],
 )
