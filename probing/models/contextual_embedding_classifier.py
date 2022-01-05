@@ -122,18 +122,22 @@ class SentenceRepresentationProber(BaseModel):
                                  train_base_model=self.config.train_base_model,
                                  )
         self.output_size = len(dataset.vocabs.label)
+        self.layer_pooling = config.layer_pooling
         self.dropout = nn.Dropout(self.config.dropout)
         self.criterion = nn.CrossEntropyLoss()
 
-        mlp_input_size = self.embedder.hidden_size
+        embedder_output_size = self.embedder.hidden_size
+        if self.layer_pooling == 'concat':
+            embedder_output_size *= self.embedder.n_layer
+
+        mlp_input_size = embedder_output_size
         if self.config.subword_pooling == 'f+l':
             self.subword_w = nn.Parameter(torch.ones(1, dtype=torch.float) / 2)
         elif self.config.subword_pooling == 'lstm':
-            sw_lstm_size = getattr(self.config, 'subword_lstm_size',
-                                   self.embedder.hidden_size)
+            sw_lstm_size = self.config.subword_lstm_size
             mlp_input_size = sw_lstm_size
             self.pool_lstm = nn.LSTM(
-                self.embedder.hidden_size,
+                embedder_output_size,
                 sw_lstm_size // 2,
                 num_layers=1,
                 batch_first=True,
@@ -141,7 +145,7 @@ class SentenceRepresentationProber(BaseModel):
             )
         elif self.config.subword_pooling == 'attn':
             self.subword_mlp = MLP(
-                self.embedder.hidden_size,
+                embedder_output_size,
                 layers=[self.config.subword_mlp_size],
                 nonlinearity='ReLU',
                 output_size=1
@@ -312,6 +316,8 @@ class SentenceRepresentationProber(BaseModel):
             return target_vecs
         elif self.layer_pooling == 'sum':
             return target_vecs.sum(0)
+        elif self.layer_pooling == 'concat':
+            return torch.cat(tuple(target_vecs), -1)
         else:
             return target_vecs[self.layer_pooling]
 
