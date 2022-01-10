@@ -28,13 +28,10 @@ class Experiment:
     def __init__(self, config, train_data=None, dev_data=None,
                  override_params=None, debug=False):
         git_hash = check_and_get_commit_hash(debug)
-        if isinstance(config, str):
-            self.config = Config.from_yaml(config, override_params)
-        elif isinstance(config, Config):
+        if isinstance(config, Config):
             self.config = config
         else:
-            raise ValueError("config must be an instance of Config "
-                             "or a filename")
+            self.config = Config.from_yaml(config, override_params)
         self.set_random_seeds()
         self.config.commit_hash = git_hash
         self.data_class = getattr(data_module, self.config.dataset_class)

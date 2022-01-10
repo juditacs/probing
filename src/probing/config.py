@@ -9,6 +9,7 @@
 import os
 import yaml
 import re
+import pathlib
 
 
 class ConfigError(ValueError):
@@ -67,10 +68,10 @@ class Config:
 
     @classmethod
     def from_yaml(cls, file_or_stream, override_params=None):
-        if isinstance(file_or_stream, str):
+        try:
             with open(file_or_stream) as f:
                 params = yaml.load(f, Loader=yaml.FullLoader)
-        else:
+        except TypeError:
             params = yaml.load(file_or_stream, Loader=yaml.FullLoader)
         if override_params:
             params.update(override_params)
@@ -89,7 +90,7 @@ class Config:
     def __init__(self, **kwargs):
         self._kwargs = kwargs
         self.__expand_variables()
-        self.__derive_params()
+        self.__create_experiment_dir()
         self.__validate_params()
         self.__copy_inference_params()
 
@@ -121,16 +122,16 @@ class Config:
             v_cpy = os.path.abspath(v_cpy)
             setattr(self, p, v_cpy)
 
-    def __derive_params(self):
+    def __create_experiment_dir(self):
+        self.experiment_dir = pathlib.Path(self.experiment_dir)
         if self.generate_empty_subdir is True:
             i = 0
             fmt = '{0:04d}'
-            while os.path.exists(os.path.join(self.experiment_dir,
-                                              fmt.format(i))):
+            f'{i:04d}'
+            while (self.experiment_dir / f"{i:04d}").exists():
                 i += 1
-            self.experiment_dir = os.path.join(
-                self.experiment_dir, fmt.format(i))
-            os.makedirs(self.experiment_dir)
+            self.experiment_dir = self.experiment_dir / f"{i:04d}"
+            self.experiment_dir.mkdir()
         else:
             if not os.path.exists(self.experiment_dir):
                 os.makedirs(self.experiment_dir)
