@@ -130,7 +130,7 @@ class Config:
             while (self.experiment_dir / f"{i:04d}").exists():
                 i += 1
             self.experiment_dir = self.experiment_dir / f"{i:04d}"
-            self.experiment_dir.mkdir()
+            self.experiment_dir.mkdir(parents=True)
         else:
             if not os.path.exists(self.experiment_dir):
                 os.makedirs(self.experiment_dir)
