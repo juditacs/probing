@@ -126,7 +126,6 @@ class Config:
         self.experiment_dir = pathlib.Path(self.experiment_dir)
         if self.generate_empty_subdir is True:
             i = 0
-            fmt = '{0:04d}'
             f'{i:04d}'
             while (self.experiment_dir / f"{i:04d}").exists():
                 i += 1
