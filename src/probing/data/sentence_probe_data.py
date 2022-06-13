@@ -174,9 +174,9 @@ class WLSTMDataset(BaseDataset):
 
     def __init__(self, config, stream_or_file, **kwargs):
         if config.external_tokenizer:
-            lower = 'uncased' in config.model_name
+            lower = 'uncased' in config.external_tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
-                config.model_name, do_lower_case=lower)
+                config.external_tokenizer, do_lower_case=lower)
         else:
             self.tokenizer = None
         super().__init__(config, stream_or_file, **kwargs)
