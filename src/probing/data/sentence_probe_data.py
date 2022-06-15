@@ -423,9 +423,10 @@ class SentenceProberDataset(BaseDataset):
         self.MASK = self.tokenizer.mask_token
         self.mask_positions = set(config.mask_positions)
         if config.use_character_tokenization:
-            if not config.model_name.startswith('bert-'):
+            if not 'bert-' in config.model_name and \
+               not 'roberta-' in config.model_name:
                 raise ValueError("Character tokenization is only "
-                                "supported for BERT models.")
+                                "supported for BERT and RoBERTa models.")
             logging.info("Using character tokenization.")
         super().__init__(config, stream_or_file, max_samples, share_vocabs_with, is_unlabeled)
 
@@ -487,12 +488,10 @@ class SentenceProberDataset(BaseDataset):
                     if self.config.remove_diacritics:
                         token = unidecode.unidecode(token)
                     if self.config.use_character_tokenization == 'full':
-                        pieces = [token[0]]
-                        pieces.extend(f'##{c}' for c in token[1:])
+                        pieces = self.character_tokenize_token(token)
                     elif self.config.use_character_tokenization == 'target_only':
                         if ti == raw_idx:
-                            pieces = [token[0]]
-                            pieces.extend(f'##{c}' for c in token[1:])
+                            pieces = self.character_tokenize_token(token)
                         else:
                             pieces = self.tokenizer.tokenize(token)
                     else:
@@ -523,6 +522,17 @@ class SentenceProberDataset(BaseDataset):
             token_starts=token_starts,
             label=label,
         )
+
+    def character_tokenize_token(self, token):
+        if 'roberta-' in self.config.model_name:
+            start_char = "▁"
+            subwords = []
+            subwords.extend(self.tokenizer.tokenize(f"{start_char}{token[0]}"))
+            subwords.extend(token[1:])
+        elif 'bert-' in self.config.model_name:
+            subwords = [token[0]]
+            subwords.extend(f'##{c}' for c in token[1:])
+        return subwords
 
     def ignore_sample(self, sample):
         return False
