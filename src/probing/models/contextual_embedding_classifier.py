@@ -9,7 +9,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 import logging
-from transformers import AutoModel, AutoConfig
+
+from collections import OrderedDict
+from transformers import AutoModel, AutoConfig, MT5EncoderModel
 
 from probing.models.base import BaseModel
 from probing.models.mlp import MLP
@@ -26,16 +28,19 @@ def to_cuda(var):
 class Embedder(nn.Module):
     def __init__(self, model_name, layer_pooling,
                  randomize_embedding_weights=False,
+                 randomize_transformer_layers=False,
                  train_base_model=False):
         super().__init__()
+        if randomize_embedding_weights and randomize_transformer_layers:
+            raise ValueError("`randomize_embedding_weights` and `randomize_transformer_layers` are both set to `True`.")
         if train_base_model:
             logging.info(f"Loading {model_name}. Model caching is not "
                 "supported when finetuning.")
             self.load_base_model(model_name, randomize_embedding_weights)
         else:
-            global_key = (f'{model_name}_model', randomize_embedding_weights)
+            global_key = (f'{model_name}_model', randomize_embedding_weights, randomize_transformer_layers)
             if global_key not in globals():
-                self.load_base_model(model_name, randomize_embedding_weights)
+                self.load_base_model(model_name, randomize_embedding_weights, randomize_transformer_layers)
                 globals()[global_key] = self.embedder
             self.embedder = globals()[global_key]
             for p in self.embedder.parameters():
@@ -52,7 +57,7 @@ class Embedder(nn.Module):
                 torch.ones(self.n_layer, dtype=torch.float))
             self.softmax = nn.Softmax(0)
 
-    def load_base_model(self, model_name, randomize_embedding_weights):
+    def load_base_model(self, model_name, randomize_embedding_weights, randomize_transformer_layers):
         self.config = AutoConfig.from_pretrained(
             model_name, output_hidden_states=True)
         if randomize_embedding_weights:
@@ -60,8 +65,22 @@ class Embedder(nn.Module):
             self.embedder = AutoModel.from_config(self.config)
         else:
             logging.info(f"Loading {model_name}.")
-            self.embedder = AutoModel.from_pretrained(
-                model_name, config=self.config)
+            if "mt5" in model_name:
+                self.embedder = MT5EncoderModel.from_pretrained(
+                    model_name, config=self.config)
+            else:
+                self.embedder = AutoModel.from_pretrained(
+                    model_name, config=self.config)
+        if randomize_transformer_layers:
+            logging.info("Randomizing Transformer layers.")
+            new_state_dict = OrderedDict()
+            for name, param in self.embedder.named_parameters():
+                if name.startswith("embedding"):
+                    new_state_dict[name] = param
+                else:
+                    new_state_dict[name] = torch.rand(*param.size(), dtype=param.dtype)
+            self.embedder.load_state_dict(new_state_dict, strict=False)
+
 
     def forward(self, sentences, sentence_lens):
         if self.train_base_model:
@@ -95,6 +114,7 @@ class Embedder(nn.Module):
     def get_sizes(self):
         with torch.no_grad():
             d = self.embedder.dummy_inputs
+            d = {k: v for k, v in d.items() if not k.startswith('decoder')}
             if next(self.parameters()).is_cuda:
                 for param in d:
                     if isinstance(d[param], torch.Tensor):
@@ -120,6 +140,7 @@ class SentenceRepresentationProber(BaseModel):
                                  layer_pooling='all',
                                  randomize_embedding_weights=randweights,
                                  train_base_model=self.config.train_base_model,
+                                 randomize_transformer_layers=config.randomize_transformer_layers,
                                  )
         self.output_size = len(dataset.vocabs.label)
         self.layer_pooling = config.layer_pooling
