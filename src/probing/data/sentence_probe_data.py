@@ -227,8 +227,10 @@ class SLSTMDataset(BaseDataset):
             lower = 'uncased' in config.external_tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
                 config.external_tokenizer, do_lower_case=lower)
+            self.mask_token = self.tokenizer.mask_token
         else:
             self.tokenizer = None
+            self.mask_token = "\u258c"
         super().__init__(config, stream_or_file, **kwargs)
 
     def extract_sample_from_line(self, line):
@@ -239,26 +241,41 @@ class SLSTMDataset(BaseDataset):
         else:
             label = None
         raw_idx = int(raw_idx)
-        if self.tokenizer:
-            words = raw_sent.split(' ')
-            subwords = []
-            for idx, word in enumerate(words):
-                if self.config.probe_first:
-                    if idx == raw_idx:
-                        target_idx = len(subwords)
-                    subwords.extend(self.tokenizer.tokenize(word))
-                else:
-                    subwords.extend(self.tokenizer.tokenize(word))
-                    if idx == raw_idx:
-                        target_idx = len(subwords) - 1
-            input = subwords
-        else:
-            input = list(raw_sent)
-            words = raw_sent.split(' ')
-            if self.config.probe_first:
-                target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx
+        tokenized_words = []
+        for word in raw_sent.split(" "):
+            if self.tokenizer:
+                subwords = self.tokenizer.tokenize(word)
+                tokenized_words.append(subwords)
             else:
-                target_idx = sum(len(w) for w in words[:raw_idx]) + raw_idx + len(raw_target) - 1
+                tokenized_words.append(list(word))
+
+        if self.config.mask_positions:
+            for position in self.config.mask_positions:
+                real_position = raw_idx + position
+                if real_position >= 0 and real_position < len(tokenized_words):
+                    orig_len = len(tokenized_words[real_position])
+                    tokenized_words[real_position] = [self.mask_token] * orig_len
+
+        # Add spaces if not using a subword tokenizer
+        if not self.tokenizer:
+            for toks in tokenized_words[:-1]:
+                toks.append(" ")
+
+        # Compute target idx
+        if self.config.probe_first:
+            target_idx = sum(len(t) for t in tokenized_words[:raw_idx])
+        else:
+            # The last word does not have an extra space
+            if raw_idx == len(tokenized_words) - 1:
+                target_idx = sum(len(t) for t in tokenized_words[:raw_idx+1]) - 1
+            else:
+                target_idx = sum(len(t) for t in tokenized_words[:raw_idx+1]) - 2
+
+        # Merge tokenized words
+        input = []
+        for toks in tokenized_words:
+            input.extend(toks)
+
         return self.datafield_class(
             raw_sentence=raw_sent,
             raw_target=raw_target,
