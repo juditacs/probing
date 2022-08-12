@@ -170,6 +170,8 @@ class Config:
                 v = os.path.abspath(getattr(self, k))
             else:
                 v = getattr(self, k, None)
+            if k == 'mask_positions':
+                v = list(eval(str(self.mask_positions)))
             d[k.lstrip('_')] = v
         with open(save_fn, 'w') as f:
             yaml.dump(d, f, default_flow_style=False)
