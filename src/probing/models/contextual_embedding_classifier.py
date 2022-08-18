@@ -78,9 +78,8 @@ class Embedder(nn.Module):
                 if name.startswith("embedding"):
                     new_state_dict[name] = param
                 else:
-                    new_state_dict[name] = torch.rand(*param.size(), dtype=param.dtype)
+                    new_state_dict[name] = torch.normal(torch.zeros_like(param), self.embedder.config.initializer_range)
             self.embedder.load_state_dict(new_state_dict, strict=False)
-
 
     def forward(self, sentences, sentence_lens):
         if self.train_base_model:
