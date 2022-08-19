@@ -79,7 +79,7 @@ class Embedder(nn.Module):
                     new_state_dict[name] = param
                 elif 'layernorm.weight' in name.lower():
                     new_state_dict[name] = torch.ones_like(param)
-                elif 'layernorm.bias' in name.lower():
+                elif name.lower().endswith(".bias"):
                     new_state_dict[name] = torch.zeros_like(param)
                 else:
                     new_state_dict[name] = torch.normal(
