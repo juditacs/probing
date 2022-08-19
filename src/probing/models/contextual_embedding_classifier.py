@@ -77,8 +77,13 @@ class Embedder(nn.Module):
             for name, param in self.embedder.named_parameters():
                 if name.startswith("embedding"):
                     new_state_dict[name] = param
+                elif 'layernorm.weight' in name.lower():
+                    new_state_dict[name] = torch.ones_like(param)
+                elif 'layernorm.bias' in name.lower():
+                    new_state_dict[name] = torch.zeros_like(param)
                 else:
-                    new_state_dict[name] = torch.normal(torch.zeros_like(param), self.embedder.config.initializer_range)
+                    new_state_dict[name] = torch.normal(
+                        torch.zeros_like(param), self.embedder.config.initializer_range)
             self.embedder.load_state_dict(new_state_dict, strict=False)
 
     def forward(self, sentences, sentence_lens):
