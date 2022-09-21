@@ -13,8 +13,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 
-from transformers import AdamW
-
 
 use_cuda = torch.cuda.is_available()
 
@@ -190,10 +188,7 @@ class BaseModel(nn.Module):
         return all_output
 
     def init_optimizers(self):
-        if self.config.optimizer == 'AdamW':
-            opt_type = AdamW
-        else:
-            opt_type = getattr(optim, self.config.optimizer)
+        opt_type = getattr(optim, self.config.optimizer)
         kwargs = self.config.optimizer_kwargs
         self.optimizers = [opt_type(
             (p for p in self.parameters() if p.requires_grad),
