@@ -36,7 +36,7 @@ class Embedder(nn.Module):
         if train_base_model:
             logging.info(f"Loading {model_name}. Model caching is not "
                 "supported when finetuning.")
-            self.load_base_model(model_name, randomize_embedding_weights)
+            self.load_base_model(model_name, randomize_embedding_weights, randomize_embedding_weights)
         else:
             global_key = (f'{model_name}_model', randomize_embedding_weights, randomize_transformer_layers)
             if global_key not in globals():
