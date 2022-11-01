@@ -256,6 +256,15 @@ class SLSTMDataset(BaseDataset):
                     orig_len = len(tokenized_words[real_position])
                     tokenized_words[real_position] = [self.mask_token] * orig_len
 
+        # Perform BOW.
+        if self.config.bow:
+            all_idx = np.arange(len(tokenized_words))
+            np.random.shuffle(all_idx)
+            tokenized_words = [tokenized_words[i] for i in all_idx]
+            target_map = np.argsort(all_idx)
+            target_idx = target_map[raw_idx]
+        else:
+            target_idx = raw_idx
         # Add spaces if not using a subword tokenizer
         if not self.tokenizer:
             for toks in tokenized_words[:-1]:
@@ -267,9 +276,9 @@ class SLSTMDataset(BaseDataset):
         else:
             # The last word does not have an extra space
             if raw_idx == len(tokenized_words) - 1:
-                target_idx = sum(len(t) for t in tokenized_words[:raw_idx+1]) - 1
+                target_idx = sum(len(t) for t in tokenized_words[:target_idx+1]) - 1
             else:
-                target_idx = sum(len(t) for t in tokenized_words[:raw_idx+1]) - 2
+                target_idx = sum(len(t) for t in tokenized_words[:target_idx+1]) - 2
 
         # Merge tokenized words
         input = []
