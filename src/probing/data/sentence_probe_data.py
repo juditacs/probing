@@ -494,6 +494,10 @@ class SentenceProberDataset(BaseDataset):
             label = fd[3]
         else:
             label = None
+        if len(fd) > 4:
+            mask_positions = set(int(i) for i in fd[4].split(","))
+        else:
+            mask_positions = self.mask_positions
         raw_idx = int(raw_idx)
         # Only include the target from the sentence.
         if self.config.target_only:
@@ -508,7 +512,7 @@ class SentenceProberDataset(BaseDataset):
         else:
             tokenized = []
             for ti, token in enumerate(raw_sent.split(" ")):
-                if ti - raw_idx in self.mask_positions:
+                if ti - raw_idx in mask_positions:
                     pieces = [self.MASK]
                 else:
                     if self.config.remove_diacritics:
