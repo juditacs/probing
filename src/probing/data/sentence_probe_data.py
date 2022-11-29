@@ -511,9 +511,11 @@ class SentenceProberDataset(BaseDataset):
         # This allows shuffling it later.
         else:
             tokenized = []
+            masked = set()
             for ti, token in enumerate(raw_sent.split(" ")):
                 if ti - raw_idx in mask_positions:
                     pieces = [self.MASK]
+                    masked.add(ti - raw_idx)
                 else:
                     if self.config.remove_diacritics:
                         token = unidecode.unidecode(token)
@@ -537,6 +539,11 @@ class SentenceProberDataset(BaseDataset):
                 target_idx = target_map[raw_idx]
             else:
                 target_idx = raw_idx
+
+        if masked < mask_positions:
+            missing = map(str, mask_positions - masked)
+            logging.warning(f"Invalid mask positions ({','.join(missing)}) in "
+                            f"sentence [{raw_sent}].")
         merged = []
         token_starts = []
         for pieces in tokenized:
