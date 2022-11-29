@@ -240,6 +240,10 @@ class SLSTMDataset(BaseDataset):
             label = fd[3]
         else:
             label = None
+        if len(fd) > 4:
+            mask_positions = set(int(i) for i in fd[4].split(","))
+        else:
+            mask_positions = set(self.config.mask_positions)
         raw_idx = int(raw_idx)
         tokenized_words = []
         for word in raw_sent.split(" "):
@@ -249,13 +253,19 @@ class SLSTMDataset(BaseDataset):
             else:
                 tokenized_words.append(list(word))
 
-        if self.config.mask_positions:
-            for position in self.config.mask_positions:
-                real_position = raw_idx + position
-                if real_position >= 0 and real_position < len(tokenized_words):
-                    orig_len = len(tokenized_words[real_position])
-                    tokenized_words[real_position] = [self.mask_token] * orig_len
+        invalid_masks = set()
+        for position in mask_positions:
+            real_position = raw_idx + position
+            if real_position >= 0 and real_position < len(tokenized_words):
+                orig_len = len(tokenized_words[real_position])
+                tokenized_words[real_position] = [self.mask_token] * orig_len
+            else:
+                invalid_masks.add(position)
 
+        if invalid_masks:
+            invalid_masks = list(map(str, invalid_masks))
+            logging.warning(f"Invalid mask positions ({','.join(invalid_masks)}) in "
+                            f"sentence [{raw_sent}].")
         # Perform BOW.
         if self.config.bow:
             all_idx = np.arange(len(tokenized_words))
