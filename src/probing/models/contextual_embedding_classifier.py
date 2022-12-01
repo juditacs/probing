@@ -130,9 +130,12 @@ class Embedder(nn.Module):
     def state_dict(self, *args, **kwargs):
         if self.train_base_model:
             return super().state_dict(*args, **kwargs)
+        state = super().state_dict(*args, **kwargs)
         if self.layer_pooling == 'weighted_sum':
-            args[0]['{}weights'.format(args[1])] = self.weights
-        return args[0]
+            weight_key = f"{kwargs['prefix']}weights"
+            kept_weights = OrderedDict({weight_key: state[weight_key]})
+            return kept_weights
+        return state
 
 
 class SentenceRepresentationProber(BaseModel):
