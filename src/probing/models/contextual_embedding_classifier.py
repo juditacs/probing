@@ -131,8 +131,15 @@ class Embedder(nn.Module):
         if self.train_base_model:
             return super().state_dict(*args, **kwargs)
         state = super().state_dict(*args, **kwargs)
+        # Workaround for older PyTorch versions
+        if len(args) == 0:
+            # PyTorch >= 1.13
+            prefix = kwargs['prefix']
+        else:
+            # PyTorch < 1.13
+            prefix = args[1]
         if self.layer_pooling == 'weighted_sum':
-            weight_key = f"{kwargs['prefix']}weights"
+            weight_key = f"{prefix}weights"
             kept_weights = OrderedDict({weight_key: state[weight_key]})
             return kept_weights
         return state
