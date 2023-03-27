@@ -22,6 +22,13 @@ This framework was used in the following projects:
 
 [Github repository](https://github.com/juditacs/hubert_eval)
 
+
+## Evaluating Transferability of BERT Models on Uralic Languages
+
+[Paper](https://arxiv.org/abs/2109.06327)
+
+[Github repository](https://github.com/juditacs/uralic_eval)
+
 # Probing types and tasks
 
 It supports two types of evaluation.
