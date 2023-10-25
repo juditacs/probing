@@ -23,20 +23,6 @@ from probing import models
 use_cuda = torch.cuda.is_available()
 
 
-def parse_param_str(params):
-    param_d = {}
-    for p in params.split(','):
-        key, val = p.split('=')
-        try:
-            param_d[key] = int(val)
-        except ValueError:
-            try:
-                param_d[key] = float(val)
-            except ValueError:
-                param_d[key] = val
-    return param_d
-
-
 class Inference(Experiment):
     def __init__(self, experiment_dir, stream_or_file,
                  max_samples=None,
