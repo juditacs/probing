@@ -78,7 +78,7 @@ def parse_args():
                    help="Model pickle. If not specified, the latest "
                    "model is used.")
     p.add_argument("-t", "--test-file", type=str, default=None,
-                   help="Test file location")
+                   help="Test file location. If unspecified, the input is read from STDIN.")
     return p.parse_args()
 
 
