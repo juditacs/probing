@@ -264,7 +264,7 @@ class SLSTMDataset(BaseDataset):
 
         if invalid_masks:
             invalid_masks = list(map(str, invalid_masks))
-            logging.warning(f"Invalid mask positions ({','.join(invalid_masks)}) in "
+            logging.debug(f"Invalid mask positions ({','.join(invalid_masks)}) in "
                             f"sentence [{raw_sent}].")
         # Perform BOW.
         if self.config.bow:
@@ -552,7 +552,7 @@ class SentenceProberDataset(BaseDataset):
 
         if masked < mask_positions:
             missing = map(str, mask_positions - masked)
-            logging.warning(f"Invalid mask positions ({','.join(missing)}) in "
+            logging.debug(f"Invalid mask positions ({','.join(missing)}) in "
                             f"sentence [{raw_sent}].")
         merged = []
         token_starts = []
